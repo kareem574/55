@@ -33,6 +33,8 @@ interface RiderRepliesManagerProps {
   onTestWhatsAppAlert?: () => void;
   hasPushPermission?: boolean;
   onEnableNotifications?: () => void;
+  isSheetRestricted?: boolean;
+  onManualRefresh?: () => void;
 }
 
 export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
@@ -45,6 +47,8 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   onTestWhatsAppAlert,
   hasPushPermission,
   onEnableNotifications,
+  isSheetRestricted,
+  onManualRefresh,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'accepted' | 'rejected' | 'pending'>('all');
@@ -52,6 +56,11 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bulkCopied, setBulkCopied] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Reject Reason Modal state
+  const [rejectModalReq, setRejectModalReq] = useState<RiderRequest | null>(null);
+  const [selectedReasonPreset, setSelectedReasonPreset] = useState<string>('شيفت مكسور');
+  const [customRejectReason, setCustomRejectReason] = useState<string>('');
 
   // New Request Form state
   const [newRiderId, setNewRiderId] = useState('');
@@ -163,6 +172,33 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Google Sheet Live Access Notice */}
+        {isSheetRestricted && (
+          <div className="p-3 rounded-xl border border-amber-500/40 bg-amber-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-inner">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <FileSpreadsheet className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+              <div className="space-y-0.5">
+                <span className="font-bold text-amber-200 block">
+                  ربط جوجل شيت المباشر (Google Sheet Live Sync):
+                </span>
+                <p className="text-[11px] text-amber-300/80">
+                  لتمكين التطبيق من سحب التعديلات من ملف الشيت أونلاين كل ثانية: افتح ملف الشيت واضغط <b>مشاركة (Share)</b> ثم اجعل الوصول العام: <b>أي شخص لديه الرابط (Anyone with the link)</b>.
+                </p>
+              </div>
+            </div>
+
+            {onManualRefresh && (
+              <button
+                type="button"
+                onClick={onManualRefresh}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 shrink-0 cursor-pointer self-start sm:self-center transition-all"
+              >
+                إعادة فحص الاتصال بالشيت ↻
+              </button>
+            )}
+          </div>
+        )}
 
         {/* WhatsApp Notification Live Controller Banner */}
         <div className="p-3 sm:p-3.5 rounded-xl border border-[#25d366]/40 bg-[#0d1e16] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
@@ -425,13 +461,32 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                         <span className="font-medium text-slate-200 text-left line-clamp-1">{req.reason}</span>
                       </div>
                     )}
-                    {req.rejectReason && (
-                      <div className="flex items-start justify-between gap-2 bg-rose-950/40 p-1.5 rounded-lg border border-rose-800/40 text-[11px]">
-                        <span className="text-rose-300 font-bold shrink-0">سبب الرفض:</span>
-                        <span className="text-rose-200 font-medium">{req.rejectReason}</span>
-                      </div>
-                    )}
                   </div>
+
+                  {/* Prominent Operational Status & Rejection Reason Banner */}
+                  {isRejected && (
+                    <div className="mt-2.5 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/50 text-xs flex items-start gap-2 shadow-inner">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <span className="text-[11px] font-black text-rose-300 block">سبب الرفض في الشيت:</span>
+                        <span className="text-xs font-bold text-rose-100">{req.rejectReason || req.reply}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {isPending && (
+                    <div className="mt-2.5 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-xs flex items-center gap-2 shadow-inner">
+                      <Clock className="w-4 h-4 text-amber-400 shrink-0 animate-spin" />
+                      <span className="text-xs font-bold text-amber-200">طلب جديد قيد الإنتظار - بانتظار قرار المشرف</span>
+                    </div>
+                  )}
+
+                  {isAccepted && (
+                    <div className="mt-2.5 p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs flex items-center gap-2 shadow-inner">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="text-xs font-bold text-emerald-200">تم قبول الطلب - جاهز للإرسال للكابتن</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Actions Footer: Quick Action Buttons & WhatsApp Dispatch */}
@@ -441,28 +496,32 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => onUpdateReply(req.tabTitle, req.riderId, 'مقبول')}
-                      className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold border transition-colors flex items-center justify-center gap-1 ${
+                      className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-1 cursor-pointer ${
                         isAccepted 
-                          ? 'bg-emerald-600 text-white border-emerald-500' 
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm' 
                           : 'border-emerald-800/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
                       }`}
                       title="تعيين حالة الطلب إلى مقبول"
                     >
-                      <Check className="w-3 h-3 stroke-[3]" />
-                      <span>قبول</span>
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>قبول الطلب</span>
                     </button>
 
                     <button
-                      onClick={() => onUpdateReply(req.tabTitle, req.riderId, 'مرفوض', 'شيفت مكسور / سيستم')}
-                      className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold border transition-colors flex items-center justify-center gap-1 ${
+                      onClick={() => {
+                        setRejectModalReq(req);
+                        setSelectedReasonPreset(req.rejectReason || 'شيفت مكسور');
+                        setCustomRejectReason('');
+                      }}
+                      className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-1 cursor-pointer ${
                         isRejected 
-                          ? 'bg-rose-600 text-white border-rose-500' 
+                          ? 'bg-rose-600 text-white border-rose-500 shadow-sm' 
                           : 'border-rose-800/50 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
                       }`}
-                      title="تعيين حالة الطلب إلى مرفوض"
+                      title="تحديد سبب الرفض ورفض الطلب"
                     >
-                      <XCircle className="w-3 h-3" />
-                      <span>رفض</span>
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>رفض مع السبب</span>
                     </button>
                   </div>
 
@@ -571,6 +630,108 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Rejection Reason Selection Modal */}
+      {rejectModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md bg-slate-950 border border-rose-500/40 rounded-2xl p-5 shadow-2xl space-y-4 ring-2 ring-rose-500/20">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-rose-400">
+                <XCircle className="w-5 h-5" />
+                <h3 className="font-bold text-sm text-slate-100">
+                  تحديد سبب رفض طلب الكابتن [{rejectModalReq.riderId}]
+                </h3>
+              </div>
+              <button
+                onClick={() => setRejectModalReq(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-1">
+              <p>التبويب: <b className="text-cyan-400 font-mono">{rejectModalReq.tabTitle}</b></p>
+              {rejectModalReq.targetTime && (
+                <p>التوقيت المطلوب: <b className="text-amber-300 font-mono">{rejectModalReq.targetTime}</b></p>
+              )}
+            </div>
+
+            {/* Reason Presets Grid */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-200">
+                اختر سبب الرفض المباشر:
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  'شيفت مكسور',
+                  'بريك سيستم',
+                  'لا يوجد شيفت',
+                  'استهلاك الحد الأقصى للساعات',
+                  'تضارب مواعيد الشيفت',
+                  'الشيفت منتهي بالفعل للوقت الحالي',
+                  'الوقت المطلوب أقل من نهاية الشيفت',
+                  'غير مستوفي الشروط',
+                  'أخرى (كتابة سبب مخصص)'
+                ].map((reasonOption) => (
+                  <button
+                    key={reasonOption}
+                    type="button"
+                    onClick={() => setSelectedReasonPreset(reasonOption)}
+                    className={`p-2 rounded-xl text-[11px] font-bold border text-right transition-all cursor-pointer ${
+                      selectedReasonPreset === reasonOption
+                        ? 'bg-rose-950/80 border-rose-500 text-rose-200 ring-2 ring-rose-500/40'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {reasonOption}
+                  </button>
+                ))}
+              </div>
+
+              {selectedReasonPreset === 'أخرى (كتابة سبب مخصص)' && (
+                <div className="pt-2">
+                  <input
+                    type="text"
+                    placeholder="اكتب سبب الرفض هنا بالتفصيل..."
+                    value={customRejectReason}
+                    onChange={(e) => setCustomRejectReason(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-900 border border-rose-500/60 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRejectModalReq(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white cursor-pointer"
+              >
+                تراجع
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  const finalReason = selectedReasonPreset === 'أخرى (كتابة سبب مخصص)'
+                    ? (customRejectReason.trim() || 'شيفت مكسور / سيستم')
+                    : selectedReasonPreset;
+
+                  onUpdateReply(rejectModalReq.tabTitle, rejectModalReq.riderId, 'مرفوض', finalReason);
+                  setRejectModalReq(null);
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-rose-600 hover:bg-rose-500 text-white shadow-lg cursor-pointer flex items-center gap-1.5 transition-all"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>تأكيد الرفض مع حفظ السبب</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

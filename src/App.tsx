@@ -56,6 +56,7 @@ export default function App() {
     testWhatsAppAlert,
     hasPushPermission,
     enableNotifications,
+    isSheetRestricted,
   } = useLiveSheetSync();
 
   // Export JSON helper
@@ -119,6 +120,8 @@ export default function App() {
             onTestWhatsAppAlert={testWhatsAppAlert}
             hasPushPermission={hasPushPermission}
             onEnableNotifications={enableNotifications}
+            isSheetRestricted={isSheetRestricted}
+            onManualRefresh={executeSync}
           />
         )}
 

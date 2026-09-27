@@ -4,7 +4,8 @@ import {
   SPREADSHEET_ID, 
   getNasrCityInitialData, 
   extractAllRiderRequests,
-  classifyReplyStatus 
+  classifyReplyStatus,
+  fetchLiveGoogleSheetTab
 } from '../services/sheets';
 import { 
   playWhatsAppChime, 
@@ -15,7 +16,7 @@ import { ToastNotificationData } from '../components/WhatsAppNotificationToast';
 
 export function useLiveSheetSync() {
   const [sheets, setSheets] = useState<SheetTab[]>(() => {
-    const saved = localStorage.getItem('nasr_city_sheets_data');
+    const saved = localStorage.getItem('nasr_city_sheets_exact_v4');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -23,7 +24,11 @@ export function useLiveSheetSync() {
         // fallback
       }
     }
-    return getNasrCityInitialData();
+    const initial = getNasrCityInitialData();
+    try {
+      localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(initial));
+    } catch {}
+    return initial;
   });
 
   const [diffs, setDiffs] = useState<SheetDiff[]>([]);
@@ -32,6 +37,7 @@ export function useLiveSheetSync() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
   const [hasChangesInLastTick, setHasChangesInLastTick] = useState<boolean>(false);
+  const [isSheetRestricted, setIsSheetRestricted] = useState<boolean>(false);
   
   // WhatsApp Notification State
   const [toastNotification, setToastNotification] = useState<ToastNotificationData | null>(null);
@@ -109,19 +115,47 @@ export function useLiveSheetSync() {
     triggerWhatsAppAlert('3908789', 'تزويد الشيفتات', 'تزويد شيفت طيار', '12:00 AM');
   };
 
-  // Execute 1-second pulse
+  // Execute 1-second pulse & real Google Sheet online fetch
   const executeSync = useCallback(async () => {
     const startTime = performance.now();
     setIsSyncing(true);
 
     try {
+      // Attempt live fetch from Google Sheet
+      const activeTitle = 'تزويد الشيفتات';
+      const liveRes = await fetchLiveGoogleSheetTab(SPREADSHEET_ID, activeTitle);
+
       const endTime = performance.now();
       const latency = Math.max(25, Math.round(endTime - startTime) || 65);
       const nowTime = new Date().toLocaleTimeString('ar-EG');
 
+      if (liveRes.error === 'RESTRICTED_ACCESS') {
+        setIsSheetRestricted(true);
+      } else if (liveRes.rows && liveRes.rows.length > 0) {
+        setIsSheetRestricted(false);
+        // Update sheets with live data from Google Sheets
+        setSheets((currentSheets) => {
+          return currentSheets.map((s) => {
+            if (s.title === activeTitle && liveRes.rows.length > 0) {
+              return {
+                ...s,
+                headers: liveRes.headers.length > 0 ? liveRes.headers : s.headers,
+                rows: liveRes.rows,
+                rowCount: liveRes.rows.length,
+                updatedAt: nowTime,
+              };
+            }
+            return {
+              ...s,
+              updatedAt: nowTime,
+            };
+          });
+        });
+      }
+
       setSheets((currentSheets) => {
         try {
-          localStorage.setItem('nasr_city_sheets_data', JSON.stringify(currentSheets));
+          localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(currentSheets));
         } catch {}
 
         return currentSheets.map((s) => ({
@@ -180,7 +214,9 @@ export function useLiveSheetSync() {
         
         if (replyColIdx !== -1) newRow[replyColIdx] = newReply;
         if (statusColIdx !== -1) newRow[statusColIdx] = 'تم الرد';
-        if (reasonColIdx !== -1 && reason !== undefined) newRow[reasonColIdx] = reason;
+        if (reasonColIdx !== -1) {
+          newRow[reasonColIdx] = newReply === 'مقبول' ? '' : (reason || 'شيفت مكسور / سيستم');
+        }
 
         const oldReply = String(sheet.rows[targetRowIdx][replyColIdx] || '');
         
@@ -267,7 +303,7 @@ export function useLiveSheetSync() {
       });
 
       try {
-        localStorage.setItem('nasr_city_sheets_data', JSON.stringify(updated));
+        localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(updated));
       } catch {}
 
       return updated;
@@ -277,7 +313,7 @@ export function useLiveSheetSync() {
   const resetToOriginalData = () => {
     const fresh = getNasrCityInitialData();
     setSheets(fresh);
-    localStorage.removeItem('nasr_city_sheets_data');
+    localStorage.removeItem('nasr_city_sheets_exact_v4');
     setDiffs([]);
   };
 
@@ -311,5 +347,6 @@ export function useLiveSheetSync() {
     testWhatsAppAlert,
     hasPushPermission,
     enableNotifications,
+    isSheetRestricted,
   };
 }
