@@ -16,7 +16,9 @@ import {
   Plus,
   Radio,
   FileSpreadsheet,
-  AlertTriangle
+  AlertTriangle,
+  Bell,
+  Volume2
 } from 'lucide-react';
 import { RiderRequest, ThemeConfig } from '../types';
 import { formatRiderWhatsAppMessage, formatBulkRidersSummary } from '../services/sheets';
@@ -28,6 +30,9 @@ interface RiderRepliesManagerProps {
   onUpdateReply: (tabTitle: string, riderId: string, reply: 'مقبول' | 'مرفوض', reason?: string) => void;
   onAddNewRequest: (tabTitle: string, riderId: string, note: string) => void;
   syncIntervalSec: number;
+  onTestWhatsAppAlert?: () => void;
+  hasPushPermission?: boolean;
+  onEnableNotifications?: () => void;
 }
 
 export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
@@ -37,6 +42,9 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   onUpdateReply,
   onAddNewRequest,
   syncIntervalSec,
+  onTestWhatsAppAlert,
+  hasPushPermission,
+  onEnableNotifications,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'accepted' | 'rejected' | 'pending'>('all');
@@ -153,6 +161,56 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
               {bulkCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4 text-cyan-400" />}
               <span>{bulkCopied ? 'تم نسخ التقرير المجمع' : 'نسخ تقرير للجروب'}</span>
             </button>
+          </div>
+        </div>
+
+        {/* WhatsApp Notification Live Controller Banner */}
+        <div className="p-3 sm:p-3.5 rounded-xl border border-[#25d366]/40 bg-[#0d1e16] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#25d366] text-[#0d1e16] flex items-center justify-center shrink-0 shadow-md">
+              <Bell className="w-5 h-5 fill-current animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-100">
+                  إشعارات الواتساب الفورية لكافة الطلبات
+                </span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full font-bold bg-[#25d366]/20 text-[#25d366] border border-[#25d366]/30">
+                  نغمة واهتزاز
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                أي طلب طيار يصل أو يتم تسجيله يصدر نغمة الواتساب واهتزاز الهاتف وإشعاراً فورياً بالشاشة
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+            {onTestWhatsAppAlert && (
+              <button
+                type="button"
+                onClick={onTestWhatsAppAlert}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-[#25d366]/50 bg-[#163625] hover:bg-[#214c35] text-[#25d366] flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>تجربة صوت الواتساب</span>
+              </button>
+            )}
+
+            {onEnableNotifications && (
+              <button
+                type="button"
+                onClick={onEnableNotifications}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  hasPushPermission
+                    ? 'bg-[#25d366]/20 text-[#25d366] border border-[#25d366]/40'
+                    : 'bg-[#25d366] hover:bg-[#20ba59] text-black shadow-md'
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{hasPushPermission ? 'الإشعارات مفعلة' : 'تفعيل إشعارات الهاتف'}</span>
+              </button>
+            )}
           </div>
         </div>
 

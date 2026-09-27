@@ -10,6 +10,7 @@ import { LiveSheetsExplorer } from './components/LiveSheetsExplorer';
 import { ChangeLogView } from './components/ChangeLogView';
 import { SettingsView } from './components/SettingsView';
 import { ThemeModal } from './components/ThemeModal';
+import { WhatsAppNotificationToast } from './components/WhatsAppNotificationToast';
 import { SPREADSHEET_ID } from './services/sheets';
 
 export default function App() {
@@ -50,6 +51,11 @@ export default function App() {
     updateRequestReply,
     addNewRiderRequest,
     resetToOriginalData,
+    toastNotification,
+    dismissToast,
+    testWhatsAppAlert,
+    hasPushPermission,
+    enableNotifications,
   } = useLiveSheetSync();
 
   // Export JSON helper
@@ -110,6 +116,9 @@ export default function App() {
             onUpdateReply={updateRequestReply}
             onAddNewRequest={addNewRiderRequest}
             syncIntervalSec={syncIntervalSec}
+            onTestWhatsAppAlert={testWhatsAppAlert}
+            hasPushPermission={hasPushPermission}
+            onEnableNotifications={enableNotifications}
           />
         )}
 
@@ -173,6 +182,15 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* WhatsApp-Style Notification Pop-up Toast */}
+      <WhatsAppNotificationToast
+        notification={toastNotification}
+        onClose={dismissToast}
+        onAccept={(tab, id) => updateRequestReply(tab, id, 'مقبول')}
+        onReject={(tab, id) => updateRequestReply(tab, id, 'مرفوض', 'شيفت مكسور / سيستم')}
+        onViewReplies={() => setActiveMainTab('replies')}
+      />
 
       {/* Theme Picker Modal */}
       <ThemeModal

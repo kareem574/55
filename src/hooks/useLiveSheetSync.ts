@@ -6,7 +6,12 @@ import {
   extractAllRiderRequests,
   classifyReplyStatus 
 } from '../services/sheets';
-import { playUpdateChime } from '../utils/audio';
+import { 
+  playWhatsAppChime, 
+  sendWhatsAppSystemNotification, 
+  requestNotificationPermission 
+} from '../utils/audio';
+import { ToastNotificationData } from '../components/WhatsAppNotificationToast';
 
 export function useLiveSheetSync() {
   const [sheets, setSheets] = useState<SheetTab[]>(() => {
@@ -27,6 +32,12 @@ export function useLiveSheetSync() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
   const [hasChangesInLastTick, setHasChangesInLastTick] = useState<boolean>(false);
+  
+  // WhatsApp Notification State
+  const [toastNotification, setToastNotification] = useState<ToastNotificationData | null>(null);
+  const [hasPushPermission, setHasPushPermission] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+  });
 
   // Compute live Rider Requests
   const riderRequests = extractAllRiderRequests(sheets);
@@ -44,8 +55,6 @@ export function useLiveSheetSync() {
     totalPending,
   });
 
-  const prevSheetsRef = useRef<SheetTab[]>(sheets);
-
   // Update sync stats whenever totals change
   useEffect(() => {
     setSyncStats(prev => ({
@@ -55,6 +64,50 @@ export function useLiveSheetSync() {
       totalPending,
     }));
   }, [totalAccepted, totalRejected, totalPending]);
+
+  // Request browser notification permission
+  const enableNotifications = async () => {
+    const granted = await requestNotificationPermission();
+    setHasPushPermission(granted);
+    if (granted) {
+      sendWhatsAppSystemNotification(
+        'تم تفعيل إشعارات تشغيل العز',
+        'ستصلك إشعارات فورية بكل طلب جديد للطيارين مثل الواتساب تماماً'
+      );
+    }
+    return granted;
+  };
+
+  // Trigger WhatsApp notification for a request
+  const triggerWhatsAppAlert = (riderId: string, tabTitle: string, requestType: string, timeOrNote?: string) => {
+    const toast: ToastNotificationData = {
+      id: `${Date.now()}-${riderId}`,
+      riderId,
+      tabTitle,
+      requestType,
+      targetTime: timeOrNote,
+      timestamp: new Date().toLocaleTimeString('ar-EG'),
+    };
+
+    setToastNotification(toast);
+
+    if (isSoundEnabled) {
+      sendWhatsAppSystemNotification(
+        `🛵 طلب طيار جديد: ${riderId}`,
+        `قام الكابتن ${riderId} بتقديم طلب ${requestType} في تبويب ${tabTitle} (${timeOrNote || ''})`
+      );
+    }
+
+    // Auto dismiss after 6 seconds
+    setTimeout(() => {
+      setToastNotification(current => current?.id === toast.id ? null : current);
+    }, 6000);
+  };
+
+  // Test WhatsApp notification
+  const testWhatsAppAlert = () => {
+    triggerWhatsAppAlert('3908789', 'تزويد الشيفتات', 'تزويد شيفت طيار', '12:00 AM');
+  };
 
   // Execute 1-second pulse
   const executeSync = useCallback(async () => {
@@ -66,9 +119,7 @@ export function useLiveSheetSync() {
       const latency = Math.max(25, Math.round(endTime - startTime) || 65);
       const nowTime = new Date().toLocaleTimeString('ar-EG');
 
-      // Seamlessly keep timestamps active and occasionally simulate incoming rider updates
       setSheets((currentSheets) => {
-        // Save state to localStorage
         try {
           localStorage.setItem('nasr_city_sheets_data', JSON.stringify(currentSheets));
         } catch {}
@@ -150,7 +201,7 @@ export function useLiveSheetSync() {
         setTimeout(() => setHasChangesInLastTick(false), 1200);
 
         if (isSoundEnabled) {
-          playUpdateChime();
+          playWhatsAppChime();
         }
 
         newRows[targetRowIdx] = newRow;
@@ -169,8 +220,11 @@ export function useLiveSheetSync() {
     });
   };
 
-  // Add a new fast rider request
+  // Add a new fast rider request & trigger notification
   const addNewRiderRequest = (tabTitle: string, riderId: string, timeOrNote: string) => {
+    // Fire WhatsApp Notification alert
+    triggerWhatsAppAlert(riderId, tabTitle, 'طلب جديد', timeOrNote);
+
     setSheets(current => {
       const now = new Date().toLocaleString('ar-EG');
       const updated = current.map(sheet => {
@@ -204,10 +258,6 @@ export function useLiveSheetSync() {
         setHasChangesInLastTick(true);
         setTimeout(() => setHasChangesInLastTick(false), 1200);
 
-        if (isSoundEnabled) {
-          playUpdateChime();
-        }
-
         return {
           ...sheet,
           rows: newRows,
@@ -234,6 +284,7 @@ export function useLiveSheetSync() {
   const togglePolling = () => setIsPollingActive(p => !p);
   const toggleSound = () => setIsSoundEnabled(s => !s);
   const clearDiffs = () => setDiffs([]);
+  const dismissToast = () => setToastNotification(null);
 
   return {
     spreadsheetId: SPREADSHEET_ID,
@@ -254,5 +305,11 @@ export function useLiveSheetSync() {
     updateRequestReply,
     addNewRiderRequest,
     resetToOriginalData,
+    toastNotification,
+    dismissToast,
+    triggerWhatsAppAlert,
+    testWhatsAppAlert,
+    hasPushPermission,
+    enableNotifications,
   };
 }
