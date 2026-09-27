@@ -18,7 +18,8 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   Bell,
-  Volume2
+  Volume2,
+  Calendar
 } from 'lucide-react';
 import { RiderRequest, ThemeConfig } from '../types';
 import { formatRiderWhatsAppMessage, formatBulkRidersSummary } from '../services/sheets';
@@ -49,8 +50,21 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'accepted' | 'rejected' | 'pending'>('all');
   const [selectedTabFilter, setSelectedTabFilter] = useState<string>('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bulkCopied, setBulkCopied] = useState(false);
+
+  // Extract all distinct dates from timestamps
+  const availableDates = useMemo(() => {
+    const dates = new Set<string>();
+    requests.forEach(r => {
+      if (r.timestamp && r.timestamp !== 'غير مسجل') {
+        const datePart = r.timestamp.split(' ')[0];
+        if (datePart) dates.add(datePart);
+      }
+    });
+    return Array.from(dates);
+  }, [requests]);
 
   // Counts
   const acceptedCount = useMemo(() => requests.filter(r => r.statusType === 'accepted').length, [requests]);
@@ -68,18 +82,26 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
       if (selectedTabFilter !== 'all' && req.tabTitle !== selectedTabFilter) {
         return false;
       }
-      // Search query (rider ID, tab title, reply, reason)
+      // Date filter (Timestamp)
+      if (selectedDateFilter !== 'all') {
+        const reqDate = req.timestamp.split(' ')[0] || req.timestamp;
+        if (reqDate !== selectedDateFilter && !req.timestamp.includes(selectedDateFilter)) {
+          return false;
+        }
+      }
+      // Search query (rider ID, tab title, reply, reason, timestamp)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const inId = req.riderId.toLowerCase().includes(q);
         const inTab = req.tabTitle.toLowerCase().includes(q);
         const inReply = req.reply.toLowerCase().includes(q);
         const inReason = (req.rejectReason || req.reason || '').toLowerCase().includes(q);
-        return inId || inTab || inReply || inReason;
+        const inTimestamp = req.timestamp.toLowerCase().includes(q);
+        return inId || inTab || inReply || inReason || inTimestamp;
       }
       return true;
     });
-  }, [requests, statusFilter, selectedTabFilter, searchQuery]);
+  }, [requests, statusFilter, selectedTabFilter, selectedDateFilter, searchQuery]);
 
   // WhatsApp sender
   const handleSendWhatsApp = (req: RiderRequest) => {
@@ -323,21 +345,42 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
           )}
         </div>
 
-        {/* Tab Selection Filter */}
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-          <span className="text-xs text-slate-400 shrink-0">التبويب:</span>
-          <select
-            value={selectedTabFilter}
-            onChange={(e) => setSelectedTabFilter(e.target.value)}
-            className="px-3 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500"
-          >
-            <option value="all">كافة التبويبات الـ 8</option>
-            {sheetTitles.map((title) => (
-              <option key={title} value={title}>
-                {title}
-              </option>
-            ))}
-          </select>
+        {/* Filter Controls: Date, Tab, and Count */}
+        <div className="flex items-center gap-2.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar flex-wrap">
+          {/* Date Selection Filter (Timestamp) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="text-xs text-slate-400 shrink-0">التاريخ (Timestamp):</span>
+            <select
+              value={selectedDateFilter}
+              onChange={(e) => setSelectedDateFilter(e.target.value)}
+              className="px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+            >
+              <option value="all">كل التواريخ الموجودة بالشيت ({availableDates.length > 0 ? availableDates.length : 'الكل'})</option>
+              {availableDates.map((dateStr) => (
+                <option key={dateStr} value={dateStr}>
+                  {dateStr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Tab Selection Filter */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-slate-400 shrink-0">التبويب:</span>
+            <select
+              value={selectedTabFilter}
+              onChange={(e) => setSelectedTabFilter(e.target.value)}
+              className="px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500"
+            >
+              <option value="all">كافة التبويبات الـ 8</option>
+              {sheetTitles.map((title) => (
+                <option key={title} value={title}>
+                  {title}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <span className={`text-xs ${theme.textMuted} mr-auto md:mr-2 shrink-0`}>
             النتائج: <b className="text-slate-200 font-mono">{filteredRequests.length}</b>
@@ -376,13 +419,14 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
               >
                 <div>
                   {/* Card Header: Tab & Timestamp */}
-                  <div className="flex items-center justify-between text-[11px] mb-2.5">
-                    <span className="font-semibold text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800">
+                  <div className="flex items-center justify-between text-[11px] mb-2.5 gap-2">
+                    <span className="font-semibold text-slate-300 bg-slate-900/90 px-2 py-0.5 rounded-md border border-slate-800">
                       {req.tabTitle}
                     </span>
-                    <span className="font-mono text-slate-400">
-                      {req.timestamp}
-                    </span>
+                    <div className="flex items-center gap-1.5 font-mono text-slate-300 bg-slate-950/80 px-2 py-0.5 rounded-md border border-slate-800/80 shrink-0" title="تاريخ ووقت التسجيل في الشيت (Timestamp)">
+                      <Calendar className="w-3 h-3 text-cyan-400 shrink-0" />
+                      <span>{req.timestamp}</span>
+                    </div>
                   </div>
 
                   {/* Rider ID Pill */}

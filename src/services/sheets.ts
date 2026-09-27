@@ -226,6 +226,7 @@ export function extractAllRiderRequests(sheets: SheetTab[]): RiderRequest[] {
     const headers = sheet.headers;
     
     // Find column indexes
+    const timestampColIdx = headers.findIndex(h => /timestamp|طابع\s*زمني|تاريخ|date|وقت/i.test(h));
     const riderIdColIdx = headers.findIndex(h => /rider\s*id|كود\s*الطيار/i.test(h));
     const statusColIdx = headers.findIndex(h => /حالة\s*الطلب/i.test(h));
     const replyColIdx = headers.findIndex(h => /الرد\s*عل[يى]\s*الطلب/i.test(h));
@@ -244,7 +245,11 @@ export function extractAllRiderRequests(sheets: SheetTab[]): RiderRequest[] {
 
       const statusType = classifyReplyStatus(replyRaw, statusRaw);
 
-      const timestamp = String(row[0] || 'اليوم');
+      // Extract exact Timestamp from sheet column or row[0]
+      const timestamp = (timestampColIdx !== -1 && row[timestampColIdx] != null && String(row[timestampColIdx]).trim() !== '')
+        ? String(row[timestampColIdx]).trim()
+        : (row[0] != null && String(row[0]).trim() !== '' ? String(row[0]).trim() : 'غير مسجل');
+
       const targetTime = timeColIdx !== -1 && row[timeColIdx] ? String(row[timeColIdx]).trim() : undefined;
       const reason = reasonColIdx !== -1 && row[reasonColIdx] ? String(row[reasonColIdx]).trim() : undefined;
       const requestType = typeColIdx !== -1 && row[typeColIdx] ? String(row[typeColIdx]).trim() : sheet.title;
