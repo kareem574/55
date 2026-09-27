@@ -65,7 +65,19 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Google Sign-in error:', error);
-    throw error;
+    
+    // Provide user-friendly Arabic error message for common popup errors
+    if (error?.code === 'auth/popup-blocked') {
+      throw new Error('المتصفح منع النافذة المنبثقة (Popup Blocked). يرجى السماح بالنوافذ المنبثقة من إعدادات المتصفح.');
+    }
+    if (error?.code === 'auth/popup-closed-by-user') {
+      throw new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية. اضغط للمحاولة مرة أخرى.');
+    }
+    if (error?.code === 'auth/cancelled-popup-request') {
+      throw new Error('تم إلغاء طلب تسجيل الدخول السابق.');
+    }
+    
+    throw new Error(error?.message || 'تعذر تسجيل الدخول بحساب Google');
   } finally {
     isSigningIn = false;
   }

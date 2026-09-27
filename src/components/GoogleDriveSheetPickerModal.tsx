@@ -8,15 +8,17 @@ import {
   X, 
   AlertCircle,
   Clock,
-  UserCheck,
+  HardDrive,
   ChevronRight,
-  HardDrive
+  PlusCircle,
+  Mail
 } from 'lucide-react';
 import { ThemeConfig } from '../types';
 import { 
   DriveSpreadsheetItem, 
   listUserSpreadsheetsFromDrive 
 } from '../services/googleSheetsApi';
+import { SPREADSHEET_ID, SPREADSHEET_URL } from '../services/sheets';
 
 interface GoogleDriveSheetPickerModalProps {
   isOpen: boolean;
@@ -38,6 +40,7 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
   const [files, setFiles] = useState<DriveSpreadsheetItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [customSheetInput, setCustomSheetInput] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const fetchFiles = async () => {
@@ -52,7 +55,7 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
         setError(res.error || 'تعذر جلب ملفات الشيت من حسابك');
       }
     } catch (err: any) {
-      setError(err?.message || 'حدث خطأ غير متوقع');
+      setError(err?.message || 'حدث خطأ أثناء فحص ملفات جوجل درايف');
     } finally {
       setIsLoading(false);
     }
@@ -66,31 +69,52 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
 
   if (!isOpen) return null;
 
+  const handleApplyCustomInput = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customSheetInput.trim()) return;
+
+    let id = customSheetInput.trim();
+    // Extract ID if URL is provided
+    const match = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      id = match[1];
+    }
+
+    onSelectSpreadsheet(id, 'شيت مخصص');
+    onClose();
+  };
+
+  const handleSelectDefaultSheet = () => {
+    onSelectSpreadsheet(SPREADSHEET_ID, 'شيت تشغيل العز مدينة نصر (الرسمي)');
+    onClose();
+  };
+
   const filteredFiles = files.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+    f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    f.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div 
-        className={`w-full max-w-2xl rounded-2xl border ${theme.cardBorder} ${theme.cardBg} shadow-2xl flex flex-col max-h-[85vh] overflow-hidden`}
+        className={`w-full max-w-2xl rounded-2xl border ${theme.cardBorder} ${theme.cardBg} shadow-2xl flex flex-col max-h-[90vh] overflow-hidden`}
         dir="rtl"
       >
         {/* Header */}
-        <div className="p-4 border-b border-slate-700/60 flex items-center justify-between bg-slate-900/60">
+        <div className="p-3.5 sm:p-4 border-b border-slate-700/60 flex items-center justify-between bg-slate-900/80">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-white flex items-center gap-2">
-                <span>اختيار ملف الشيت من Google Drive</span>
+              <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2 flex-wrap">
+                <span>ملفات Google Sheets في حسابك</span>
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
-                  متصل بحسابك
+                  متصل ومفعل
                 </span>
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                اختر أي شيت من درايف لتحميله ومزامنته بجميع صفوفه لحظياً
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+                اختر الشيت مباشرة من القائمة، أو الصق رابط أي شيت تابع لحسابك
               </p>
             </div>
           </div>
@@ -103,24 +127,66 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
           </button>
         </div>
 
+        {/* Quick Official Sheet Shortcut */}
+        <div className="p-3 bg-gradient-to-r from-emerald-950/40 to-cyan-950/40 border-b border-slate-800/80 flex items-center justify-between gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-200 truncate">
+                شيت تشغيل العز مدينة نصر الرئيسي
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
+                ID: {SPREADSHEET_ID}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={handleSelectDefaultSheet}
+            className="px-3 py-1 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer shadow-sm shrink-0"
+          >
+            تحميل هذا الشيت
+          </button>
+        </div>
+
+        {/* Direct Link or ID Form */}
+        <form onSubmit={handleApplyCustomInput} className="p-2.5 border-b border-slate-800 bg-slate-950/40 flex items-center gap-2">
+          <input
+            type="text"
+            value={customSheetInput}
+            onChange={(e) => setCustomSheetInput(e.target.value)}
+            placeholder="أو الصق رابط / ID أي شيت آخر مباشرة هنا..."
+            className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+            dir="ltr"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-xs font-bold rounded-xl bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer shrink-0"
+          >
+            فتح الشيت
+          </button>
+        </form>
+
         {/* Search & Refresh Toolbar */}
-        <div className="p-3 border-b border-slate-800 bg-slate-950/40 flex items-center gap-2">
+        <div className="p-2.5 border-b border-slate-800 bg-slate-900/40 flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث في ملفات Google Sheets الخاصة بك..."
-              className="w-full pr-9 pl-3 py-2 text-xs rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              placeholder="ابحث في ملفات الدرايف بالاسم..."
+              className="w-full pr-9 pl-3 py-1.5 text-xs rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
             />
           </div>
 
           <button
             onClick={fetchFiles}
             disabled={isLoading}
-            className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 transition-colors disabled:opacity-50 cursor-pointer"
-            title="إعادة تحميل الملفات من جوجل درايف"
+            className="p-1.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 transition-colors disabled:opacity-50 cursor-pointer"
+            title="إعادة فحص Google Drive"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -131,7 +197,7 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
           {isLoading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
               <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
-              <p className="text-xs font-semibold">جاري جلب ملفات الشيت من Google Drive...</p>
+              <p className="text-xs font-semibold">جاري استعراض ملفات الشيت من Google Drive...</p>
             </div>
           ) : error ? (
             <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
@@ -139,12 +205,16 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
               <span>{error}</span>
             </div>
           ) : filteredFiles.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 space-y-2">
+            <div className="py-10 text-center text-slate-400 space-y-3 px-4">
               <FileSpreadsheet className="w-10 h-10 mx-auto text-slate-600 opacity-60" />
-              <p className="text-xs font-bold text-slate-300">لم يتم العثور على ملفات شيت</p>
-              <p className="text-[11px] text-slate-500">
-                {searchQuery ? 'لا توجد نتائج تطابق بحثك' : 'لا توجد ملفات Google Sheets في هذا الحساب'}
-              </p>
+              <div>
+                <p className="text-xs font-bold text-slate-200">
+                  {searchQuery ? 'لا توجد نتائج تطابق بحثك' : 'لم يتم العثور على ملفات Google Sheets منشأة في هذا الحساب مباشرة'}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                  إذا كان الشيت مشاركاً معك أو في حساب آخر، يمكنك الضغط على <strong>"تحميل شيت تشغيل العز الرئيسي"</strong> بالأعلى أو لصق رابطه مباشرة وسيتم سحب كافة البيانات فوراً!
+                </p>
+              </div>
             </div>
           ) : (
             filteredFiles.map((file) => {
@@ -197,7 +267,7 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
                         {dateStr && (
                           <span className="flex items-center gap-1 font-mono text-[10px]">
                             <Clock className="w-3 h-3 text-slate-500" />
-                            <span>آخر تعديل: {dateStr}</span>
+                            <span>{dateStr}</span>
                           </span>
                         )}
                         <span className="font-mono text-[10px] text-slate-500 truncate" dir="ltr">
@@ -236,11 +306,11 @@ export const GoogleDriveSheetPickerModal: React.FC<GoogleDriveSheetPickerModalPr
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
-          <span>إجمالي الملفات المعروضة: {filteredFiles.length}</span>
+        <div className="p-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400">
+          <span>إجمالي الملفات: {filteredFiles.length}</span>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold transition-colors cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold transition-colors cursor-pointer"
           >
             إغلاق
           </button>

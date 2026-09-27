@@ -140,6 +140,7 @@ export default function App() {
           onLogin={loginWithGoogle}
           onOpenPicker={() => setIsDrivePickerOpen(true)}
           isAuthLoading={isAuthLoading}
+          authError={authError}
         />
         
         {/* Tab 1: Rider Replies Manager (مقبول / مرفوض) */}

@@ -4,7 +4,8 @@ import {
   ExternalLink, 
   CheckCircle2, 
   FolderOpen, 
-  HardDrive
+  HardDrive,
+  AlertTriangle
 } from 'lucide-react';
 import { ThemeConfig } from '../types';
 import { User } from 'firebase/auth';
@@ -22,6 +23,7 @@ interface SheetUrlSyncBarProps {
   onLogin: () => void;
   onOpenPicker: () => void;
   isAuthLoading: boolean;
+  authError?: string | null;
 }
 
 export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
@@ -37,6 +39,7 @@ export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
   onLogin,
   onOpenPicker,
   isAuthLoading,
+  authError,
 }) => {
   const [urlInput, setUrlInput] = useState(sheetUrl);
   const [isEditing, setIsEditing] = useState(false);
@@ -74,7 +77,7 @@ export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
                   </span>
                 ) : (
                   <span className="text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 px-1.5 sm:px-2 py-0.5 rounded-full font-bold">
-                    ربط Google Drive
+                    جاهز للمزامنة والربط
                   </span>
                 )}
               </div>
@@ -132,7 +135,7 @@ export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
                 className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer active:scale-95"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-emerald-100" />
-                <span>شيت من Drive</span>
+                <span>ملفات الشيت في Drive</span>
               </button>
             ) : (
               <button
@@ -146,7 +149,7 @@ export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
                   <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
                   <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
                 </svg>
-                <span>{isAuthLoading ? 'جاري الاتصال...' : 'ربط Google'}</span>
+                <span>{isAuthLoading ? 'جاري الاتصال...' : 'ربط حساب Google'}</span>
               </button>
             )}
 
@@ -187,24 +190,48 @@ export const SheetUrlSyncBar: React.FC<SheetUrlSyncBarProps> = ({
         </div>
       </div>
 
-      {/* Helper notice if user is not connected yet */}
-      {!user && (
-        <div className="p-3 rounded-2xl bg-slate-900/80 border border-cyan-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-md">
-          <div className="flex items-center gap-2 text-slate-300">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
-            <span className="text-[11px] sm:text-xs">
-              <strong>ربط حساب Google:</strong> يمكنك استعراض واختيار أي شيت موجود في الـ Drive الخاص بك مباشرة.
-            </span>
+      {/* Auth Error Banner if Popup was closed or blocked */}
+      {authError && (
+        <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/50 text-xs text-rose-300 flex items-center justify-between gap-2 shadow-md">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{authError}</span>
           </div>
           <button
             onClick={onLogin}
-            disabled={isAuthLoading}
-            className="w-full sm:w-auto px-3 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs cursor-pointer shadow-sm text-center"
+            className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
           >
-            ربط الحساب الآن
+            إعادة المحاولة
           </button>
         </div>
       )}
+
+      {/* Helpful Info banner for nasrcitylogistics.elezz@gmail.com */}
+      <div className="p-3 rounded-2xl bg-slate-900/80 border border-emerald-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-md">
+        <div className="flex items-center gap-2 text-slate-300">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span className="text-[11px] sm:text-xs">
+            <strong>الحساب المعتمد للشيت:</strong> <code className="text-emerald-300 font-mono bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/50">nasrcitylogistics.elezz@gmail.com</code> — يمكنك تسجيل الدخول به مباشرة أو استخدام الرابط الأصلي، وسيتم سحب كافة البيانات بجميع صفوفها!
+          </span>
+        </div>
+        
+        {user ? (
+          <button
+            onClick={onOpenPicker}
+            className="w-full sm:w-auto px-3 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer shadow-sm text-center shrink-0"
+          >
+            استعراض الشيتات
+          </button>
+        ) : (
+          <button
+            onClick={onLogin}
+            disabled={isAuthLoading}
+            className="w-full sm:w-auto px-3 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer shadow-sm text-center shrink-0"
+          >
+            تسجيل الدخول بالحساب
+          </button>
+        )}
+      </div>
     </div>
   );
 };

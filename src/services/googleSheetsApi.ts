@@ -15,10 +15,11 @@ export interface DriveSpreadsheetItem {
   webViewLink?: string;
   iconLink?: string;
   owners?: Array<{ displayName?: string; emailAddress?: string }>;
+  shared?: boolean;
 }
 
 /**
- * List spreadsheets from user's Google Drive
+ * List spreadsheets from user's Google Drive (including "Shared with me" files!)
  */
 export async function listUserSpreadsheetsFromDrive(accessToken: string): Promise<{
   success: boolean;
@@ -30,15 +31,17 @@ export async function listUserSpreadsheetsFromDrive(accessToken: string): Promis
     return {
       success: false,
       files: [],
-      error: 'رمز الوصول مفقود، يرجى تسجيل الدخول',
+      error: 'رمز الوصول مفقود، يرجى تسجيل الدخول بحساب Google أولاً',
       isAuthError: true,
     };
   }
 
   try {
+    // Search both user owned files AND files shared with user ("sharedWithMe" or accessible)
+    // includeItemsFromAllDrives=true, supportsAllDrives=true
     const q = encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
-    const fields = encodeURIComponent('files(id, name, modifiedTime, webViewLink, iconLink, owners)');
-    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime%20desc&pageSize=30&fields=${fields}`;
+    const fields = encodeURIComponent('files(id, name, modifiedTime, webViewLink, iconLink, owners, shared)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime%20desc&pageSize=50&fields=${fields}&includeItemsFromAllDrives=true&supportsAllDrives=true`;
 
     const res = await fetch(url, {
       headers: {
@@ -50,7 +53,7 @@ export async function listUserSpreadsheetsFromDrive(accessToken: string): Promis
       return {
         success: false,
         files: [],
-        error: 'انتهت صلاحية الجلسة أو لا توجد صلاحية للوصول لجوجل درايف.',
+        error: 'انتهت صلاحية الجلسة أو لا توجد صلاحية للوصول لجوجل درايف. يرجى تسجيل الدخول مجدداً.',
         isAuthError: true,
       };
     }
@@ -61,9 +64,30 @@ export async function listUserSpreadsheetsFromDrive(accessToken: string): Promis
     }
 
     const data = await res.json();
+    let files: DriveSpreadsheetItem[] = data.files || [];
+
+    // Also verify if the default known spreadsheet SPREADSHEET_ID is present; if not, try to fetch its metadata specifically
+    const hasDefault = files.some(f => f.id === SPREADSHEET_ID);
+    if (!hasDefault && SPREADSHEET_ID) {
+      try {
+        const singleUrl = `https://www.googleapis.com/drive/v3/files/${SPREADSHEET_ID}?fields=${encodeURIComponent('id, name, modifiedTime, webViewLink, iconLink, owners, shared')}&supportsAllDrives=true`;
+        const singleRes = await fetch(singleUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (singleRes.ok) {
+          const singleData = await singleRes.json();
+          if (singleData && singleData.id) {
+            files = [singleData, ...files];
+          }
+        }
+      } catch (e) {
+        console.warn('Could not auto-fetch default sheet metadata from drive:', e);
+      }
+    }
+
     return {
       success: true,
-      files: data.files || [],
+      files,
     };
   } catch (err: any) {
     console.error('Failed to list spreadsheets from Drive:', err);
@@ -76,7 +100,30 @@ export async function listUserSpreadsheetsFromDrive(accessToken: string): Promis
 }
 
 /**
- * Fetch all sheets & 500+ rows from Google Sheets API using OAuth access token
+ * Fetch a single spreadsheet by ID or link using the user's access token
+ */
+export async function getSpreadsheetDetailsFromGoogle(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<{ success: boolean; name?: string; error?: string }> {
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.trim()}?fields=properties.title`;
+    const res = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      return { success: false, error: txt };
+    }
+    const data = await res.json();
+    return { success: true, name: data.properties?.title || 'شيت بدون عنوان' };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'خطأ في فحص الشيت' };
+  }
+}
+
+/**
+ * Fetch all sheets & 1000+ rows from Google Sheets API using OAuth access token
  */
 export async function fetchAllSheetsFromGoogleApi(
   accessToken: string,
