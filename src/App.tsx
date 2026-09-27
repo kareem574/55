@@ -11,6 +11,7 @@ import { ChangeLogView } from './components/ChangeLogView';
 import { SettingsView } from './components/SettingsView';
 import { ThemeModal } from './components/ThemeModal';
 import { ImportDataModal } from './components/ImportDataModal';
+import { SheetSelectorModal } from './components/SheetSelectorModal';
 import { WhatsAppNotificationToast } from './components/WhatsAppNotificationToast';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
   });
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isSheetSelectorModalOpen, setIsSheetSelectorModalOpen] = useState(false);
 
   const theme: ThemeConfig = THEMES[currentThemeId] || THEMES['navy-ops'];
 
@@ -53,6 +55,7 @@ export default function App() {
     updateRequestReply,
     addNewRiderRequest,
     resetToOriginalData,
+    loadActiveOperationalData,
     toastNotification,
     dismissToast,
     testWhatsAppAlert,
@@ -107,7 +110,47 @@ export default function App() {
         onGoogleLogin={handleGoogleLogin}
         onGoogleLogout={handleGoogleLogout}
         onOpenImportModal={() => setIsImportModalOpen(true)}
+        onOpenSheetSelector={() => setIsSheetSelectorModalOpen(true)}
+        spreadsheetId={spreadsheetId}
       />
+
+      {/* Operational Active Shift Banner */}
+      {isSheetRestricted && !currentUser && (
+        <div className="bg-amber-950/80 border-b border-amber-500/40 px-4 py-2.5 text-xs backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-amber-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping inline-block"></span>
+              <span className="font-extrabold text-amber-100">وضع العمليات النشطة:</span>
+              <span className="text-amber-200/90 hidden sm:inline">
+                الشيت مقفل خارجياً من Google (401). النظام يعمل بالبيانات التشغيلية الحالية ويمكنك اللصق أو تسجيل الدخول أو اختيار شيت آخر للمزامنة.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSheetSelectorModalOpen(true)}
+                className="px-3 py-1 bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200 rounded-xl font-bold border border-cyan-500/40 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>📋 اختيار أو تغيير الشيت</span>
+              </button>
+              <button
+                type="button"
+                onClick={loadActiveOperationalData}
+                className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 rounded-xl font-bold border border-amber-500/40 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>📥 تحميل بيانات الشيفت (82+ طلب)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-200 rounded-xl font-bold border border-emerald-500/40 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>📋 لصق يدوي (Ctrl+V)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <NavigationTabs
@@ -153,6 +196,10 @@ export default function App() {
             onSelectSheetTab={(id) => setActiveSheetTabId(id)}
             recentDiffs={diffs.slice(0, 15)}
             spreadsheetId={spreadsheetId}
+            currentUser={currentUser}
+            isLoggingIn={isLoggingIn}
+            onGoogleLogin={handleGoogleLogin}
+            onOpenImportModal={() => setIsImportModalOpen(true)}
           />
         )}
 
@@ -208,6 +255,7 @@ export default function App() {
             onGoogleLogin={handleGoogleLogin}
             onGoogleLogout={handleGoogleLogout}
             onOpenImportModal={() => setIsImportModalOpen(true)}
+            onOpenSheetSelector={() => setIsSheetSelectorModalOpen(true)}
           />
         )}
       </main>
@@ -234,6 +282,23 @@ export default function App() {
         onClose={() => setIsThemeModalOpen(false)}
         currentTheme={theme}
         onSelectTheme={handleSelectTheme}
+      />
+
+      {/* Sheet Selector & Google Connection Modal */}
+      <SheetSelectorModal
+        isOpen={isSheetSelectorModalOpen}
+        onClose={() => setIsSheetSelectorModalOpen(false)}
+        theme={theme}
+        currentSpreadsheetId={spreadsheetId}
+        onSelectSpreadsheetId={(id) => {
+          setSpreadsheetId(id);
+          executeSync();
+        }}
+        currentUser={currentUser}
+        isLoggingIn={isLoggingIn}
+        onGoogleLogin={handleGoogleLogin}
+        onGoogleLogout={handleGoogleLogout}
+        isSheetRestricted={isSheetRestricted}
       />
     </div>
   );

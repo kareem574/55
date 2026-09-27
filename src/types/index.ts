@@ -70,3 +70,12 @@ export interface ThemeConfig {
   tableBorder: string;
   sidebarBg: string;
 }
+
+export interface SavedSheetConfig {
+  id: string; // The spreadsheet ID
+  name: string; // Friendly Arabic name
+  url: string;
+  notes?: string;
+  isDefault?: boolean;
+  addedAt: string;
+}

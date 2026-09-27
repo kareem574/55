@@ -39,6 +39,7 @@ interface SettingsViewProps {
   onGoogleLogin?: () => void;
   onGoogleLogout?: () => void;
   onOpenImportModal?: () => void;
+  onOpenSheetSelector?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -60,6 +61,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onGoogleLogin,
   onGoogleLogout,
   onOpenImportModal,
+  onOpenSheetSelector,
 }) => {
   const [resetDone, setResetDone] = useState(false);
   const [customSheetInput, setCustomSheetInput] = useState(spreadsheetId);
@@ -232,14 +234,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 placeholder="أدخل رابط الشيت أو الـ ID..."
                 className="flex-1 px-3.5 py-2 rounded-xl text-xs font-mono bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
               />
-              <button
-                type="button"
-                onClick={handleSaveSheetId}
-                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{sheetIdSaved ? 'تم الحفظ والمزامنة' : 'حفظ ومزامنة'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveSheetId}
+                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{sheetIdSaved ? 'تم الحفظ والمزامنة' : 'حفظ ومزامنة'}</span>
+                </button>
+                {onOpenSheetSelector && (
+                  <button
+                    type="button"
+                    onClick={onOpenSheetSelector}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>اختيار من الشيتات المحفوظة</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

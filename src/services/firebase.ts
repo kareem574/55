@@ -14,6 +14,9 @@ export const SCOPES = [
 
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
+provider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 // In-memory token cache (never stored in localStorage/sessionStorage per security rules)
 let cachedAccessToken: string | null = null;

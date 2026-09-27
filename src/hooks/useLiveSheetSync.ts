@@ -8,7 +8,8 @@ import {
   fetchLiveGoogleSheetTab,
   fetchSpreadsheetWithOAuth,
   parseSpreadsheetId,
-  parsePastedSpreadsheetText
+  parsePastedSpreadsheetText,
+  parseExcelWorkbookBuffer
 } from '../services/sheets';
 import { 
   initAuth, 
@@ -38,17 +39,20 @@ export function useLiveSheetSync() {
   };
 
   const [sheets, setSheets] = useState<SheetTab[]>(() => {
-    // Clear all legacy mock data permanently
+    // Clear legacy empty cache
     try {
       localStorage.removeItem('nasr_city_sheets_exact_v4');
       localStorage.removeItem('nasr_city_sheets_data');
     } catch {}
 
-    const saved = localStorage.getItem('nasr_city_sheets_live_v2');
+    const saved = localStorage.getItem('nasr_city_sheets_live_v3') || localStorage.getItem('nasr_city_sheets_live_v2');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const totalRows = parsed.reduce((acc: number, s: any) => acc + (s.rows?.length || 0), 0);
+          if (totalRows > 0) return parsed;
+        }
       } catch {}
     }
     return getNasrCityInitialData();
@@ -310,6 +314,11 @@ export function useLiveSheetSync() {
     }
   }, [spreadsheetId, isSoundEnabled, isSheetRestricted]);
 
+  // Immediate fetch on mount & whenever spreadsheetId changes
+  useEffect(() => {
+    executeSync();
+  }, [executeSync]);
+
   // Periodic polling ticker
   useEffect(() => {
     if (!isPollingActive) return;
@@ -390,6 +399,31 @@ export function useLiveSheetSync() {
     }
 
     return { success: true, count: parsed.rows.length };
+  };
+
+  // Import entire Excel workbook (.xlsx / .xls) with multiple tabs
+  const importExcelFile = async (file: File): Promise<{ success: boolean; totalRows?: number; count?: number; message?: string }> => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const { sheets: parsedSheets, totalRows } = parseExcelWorkbookBuffer(buffer);
+      if (parsedSheets.length === 0 || totalRows === 0) {
+        return { success: false, message: 'الملف فارغ أو لا يحتوي على صفوف صالحة' };
+      }
+
+      setSheets(parsedSheets);
+      try {
+        localStorage.setItem('nasr_city_sheets_live_v3', JSON.stringify(parsedSheets));
+        localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(parsedSheets));
+      } catch {}
+
+      if (isSoundEnabled) {
+        playWhatsAppChime();
+      }
+
+      return { success: true, totalRows, count: parsedSheets.length };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'تعذر قراءة ملف الإكسيل' };
+    }
   };
 
   // Update single row reply status (e.g. approve or reject request directly)
@@ -506,8 +540,20 @@ export function useLiveSheetSync() {
     });
   };
 
+  const loadActiveOperationalData = () => {
+    const data = getNasrCityInitialData();
+    setSheets(data);
+    try {
+      localStorage.setItem('nasr_city_sheets_live_v3', JSON.stringify(data));
+      localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(data));
+    } catch {}
+    if (isSoundEnabled) {
+      playWhatsAppChime();
+    }
+  };
+
   const resetToOriginalData = () => {
-    clearAllSystemData();
+    loadActiveOperationalData();
   };
 
   const togglePolling = () => setIsPollingActive(p => !p);
@@ -535,6 +581,7 @@ export function useLiveSheetSync() {
     updateRequestReply,
     addNewRiderRequest,
     resetToOriginalData,
+    loadActiveOperationalData,
     clearAllSystemData,
     toastNotification,
     dismissToast,
@@ -552,5 +599,6 @@ export function useLiveSheetSync() {
     handleGoogleLogout,
     // Manual Data Import
     importPastedData,
+    importExcelFile,
   };
 }

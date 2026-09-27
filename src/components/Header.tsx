@@ -32,6 +32,8 @@ interface HeaderProps {
   onGoogleLogin?: () => void;
   onGoogleLogout?: () => void;
   onOpenImportModal?: () => void;
+  onOpenSheetSelector?: () => void;
+  spreadsheetId?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -52,6 +54,8 @@ export const Header: React.FC<HeaderProps> = ({
   onGoogleLogin,
   onGoogleLogout,
   onOpenImportModal,
+  onOpenSheetSelector,
+  spreadsheetId,
 }) => {
   return (
     <header className={`${theme.headerBg} sticky top-0 z-40 transition-colors duration-300 shadow-md`}>
@@ -203,17 +207,29 @@ export const Header: React.FC<HeaderProps> = ({
               )
             )}
 
+            {/* Sheet Selector Modal Button */}
+            {onOpenSheetSelector && (
+              <button
+                type="button"
+                onClick={onOpenSheetSelector}
+                title="اختيار أو تغيير شيت Google Sheets المراد السحب منه"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-bold transition-all shadow-sm cursor-pointer`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
+                <span>اختيار الشيت</span>
+              </button>
+            )}
+
             {/* Direct Link to the Google Sheet */}
             <a
-              href={SPREADSHEET_URL}
+              href={`https://docs.google.com/spreadsheets/d/${spreadsheetId || SPREADSHEET_ID}/edit`}
               target="_blank"
               rel="noopener noreferrer"
-              title="فتح شيت تشغيل العز مدينة نصر في Google Sheets"
+              title="فتح الشيت الحالي في Google Sheets"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border ${theme.cardBorder} ${theme.cardBg} hover:border-emerald-500/60 text-emerald-400 text-xs font-semibold transition-all`}
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden md:inline">فتح الشيت</span>
               <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">فتح في Google</span>
             </a>
 
             {/* Theme Selector Button */}

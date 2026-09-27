@@ -24,6 +24,10 @@ interface LiveSheetsExplorerProps {
   recentDiffs: SheetDiff[];
   spreadsheetId: string;
   onSendReplyToRider?: (riderId: string, reply: string) => void;
+  currentUser?: any;
+  isLoggingIn?: boolean;
+  onGoogleLogin?: () => void;
+  onOpenImportModal?: () => void;
 }
 
 export const LiveSheetsExplorer: React.FC<LiveSheetsExplorerProps> = ({
@@ -33,6 +37,10 @@ export const LiveSheetsExplorer: React.FC<LiveSheetsExplorerProps> = ({
   onSelectSheetTab,
   recentDiffs,
   spreadsheetId,
+  currentUser,
+  isLoggingIn,
+  onGoogleLogin,
+  onOpenImportModal,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortColumnIndex, setSortColumnIndex] = useState<number | null>(null);
@@ -289,7 +297,39 @@ export const LiveSheetsExplorer: React.FC<LiveSheetsExplorerProps> = ({
                     colSpan={activeSheet.headers.length + 1}
                     className="p-12 text-center text-slate-400"
                   >
-                    لا توجد بيانات مطابقة لعملية البحث الحالية
+                    <div className="max-w-md mx-auto space-y-3">
+                      <p className="text-sm font-bold text-slate-200">
+                        {activeSheet.rows.length === 0
+                          ? 'التبويب في انتظار ربط الشيت وسحب الصفوف'
+                          : 'لا توجد بيانات مطابقة لعملية البحث الحالية'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {activeSheet.rows.length === 0
+                          ? 'اضغط على تسجيل الدخول بـ Google للقراءة مباشرة بالحساب المصرح له، أو استخدم زر اللصق اليدوي.'
+                          : 'جرّب البحث بكلمة أخرى أو إعادة تعيين حقل البحث.'}
+                      </p>
+                      {activeSheet.rows.length === 0 && !currentUser && onGoogleLogin && (
+                        <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={onGoogleLogin}
+                            disabled={isLoggingIn}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                          >
+                            <span>{isLoggingIn ? 'جاري الاتصال...' : 'تسجيل الدخول بـ Google'}</span>
+                          </button>
+                          {onOpenImportModal && (
+                            <button
+                              type="button"
+                              onClick={onOpenImportModal}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 transition-all cursor-pointer"
+                            >
+                              لصق بيانات التبويب
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
