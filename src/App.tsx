@@ -11,6 +11,7 @@ import { ChangeLogView } from './components/ChangeLogView';
 import { SettingsView } from './components/SettingsView';
 import { ThemeModal } from './components/ThemeModal';
 import { WhatsAppNotificationToast } from './components/WhatsAppNotificationToast';
+import { SheetUrlSyncBar } from './components/SheetUrlSyncBar';
 import { SPREADSHEET_ID } from './services/sheets';
 
 export default function App() {
@@ -32,9 +33,12 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<MainTabId>('replies');
   const [activeSheetTabId, setActiveSheetTabId] = useState<string>('tab-increase-shifts');
 
-  // Live Sheet Engine (Zero login required, 1-second real-time heartbeat)
+  // Live Sheet Engine (Direct link fetch, Zero login required, 500+ rows)
   const {
+    sheetUrl,
+    updateSheetUrl,
     sheets,
+    totalRowsCount,
     riderRequests,
     diffs,
     clearDiffs,
@@ -48,8 +52,6 @@ export default function App() {
     toggleSound,
     hasChangesInLastTick,
     syncStats,
-    updateRequestReply,
-    addNewRiderRequest,
     resetToOriginalData,
     toastNotification,
     dismissToast,
@@ -57,6 +59,13 @@ export default function App() {
     hasPushPermission,
     enableNotifications,
     isSheetRestricted,
+    lastFetchStatusMessage,
+    user,
+    accessToken,
+    isAuthLoading,
+    authError,
+    loginWithGoogle,
+    logoutGoogle,
   } = useLiveSheetSync();
 
   // Export JSON helper
@@ -91,6 +100,11 @@ export default function App() {
         hasChangesInLastTick={hasChangesInLastTick}
         totalAccepted={syncStats.totalAccepted}
         totalRejected={syncStats.totalRejected}
+        user={user}
+        onLogin={loginWithGoogle}
+        onLogout={logoutGoogle}
+        isAuthLoading={isAuthLoading}
+        authError={authError}
       />
 
       {/* Navigation Tabs */}
@@ -107,6 +121,18 @@ export default function App() {
 
       {/* Main View Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        {/* Direct Google Sheets Link Sync Bar (No Google login required, up to 500+ rows) */}
+        <SheetUrlSyncBar
+          theme={theme}
+          sheetUrl={sheetUrl}
+          onUpdateSheetUrl={updateSheetUrl}
+          isSyncing={isSyncing}
+          onManualSync={executeSync}
+          totalRowsCount={totalRowsCount}
+          isSheetRestricted={isSheetRestricted}
+          lastFetchStatusMessage={lastFetchStatusMessage}
+        />
         
         {/* Tab 1: Rider Replies Manager (مقبول / مرفوض) */}
         {activeMainTab === 'replies' && (

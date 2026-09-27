@@ -1,7 +1,7 @@
 import { SheetTab, RiderRequest, RequestStatus } from '../types';
 
 export const SPREADSHEET_ID = '1bQLV0lHu45yHwGGqVSYp4FC1zoJlUIrZBrbJySxDGKQ';
-export const SPREADSHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?usp=drivesdk`;
+export const SPREADSHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?usp=sharing`;
 
 export function classifyReplyStatus(reply: string, stateText?: string): RequestStatus {
   const r = (reply || '').trim().toLowerCase();
@@ -342,47 +342,179 @@ export function formatBulkRidersSummary(requests: RiderRequest[], filterType: 'a
   return text;
 }
 
+export const DEFAULT_SHEET_TABS = [
+  'تزويد الشيفتات',
+  'فك البريك',
+  'رفع و قفل شيفت',
+  'لحم الشيفت',
+  'الاستفسارات',
+  'تعديل الشيفت',
+  'استفسار عن اوردر',
+  'تغيير نقطه',
+];
+
 /**
- * Real live Google Sheet fetcher via Google Visualization API
+ * Extract Spreadsheet ID from any full Google Sheets URL or raw ID
+ */
+export function extractSpreadsheetId(urlOrId: string): string {
+  if (!urlOrId) return SPREADSHEET_ID;
+  const trimmed = urlOrId.trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed;
+}
+
+/**
+ * Parse Google Visualization API JSON response into headers and data rows (500+ rows)
+ */
+export function parseGvizResponse(text: string): { 
+  headers: string[]; 
+  rows: (string | number | boolean | null)[][]; 
+  error?: string; 
+  isRestricted?: boolean; 
+} {
+  if (text.includes('Sign in to your Google Account') || text.includes('accounts.google.com') || text.includes('Allow Google Sheets access')) {
+    return { headers: [], rows: [], error: 'RESTRICTED_ACCESS', isRestricted: true };
+  }
+
+  const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+  if (!jsonMatch || !jsonMatch[1]) {
+    return { headers: [], rows: [], error: 'INVALID_FORMAT' };
+  }
+
+  try {
+    const data = JSON.parse(jsonMatch[1]);
+    if (data.status === 'error') {
+      const msg = data.errors?.[0]?.message || 'ERROR_STATUS';
+      return { headers: [], rows: [], error: msg };
+    }
+
+    const table = data.table;
+    if (!table || !table.rows) {
+      return { headers: [], rows: [], error: 'NO_TABLE' };
+    }
+
+    // Extract all rows (even 500+ rows)
+    const rawRows: (string | number | boolean | null)[][] = (table.rows || []).map((row: any) => {
+      if (!row || !row.c) return [];
+      return row.c.map((cell: any) => {
+        if (!cell) return '';
+        return cell.f !== undefined && cell.f !== null 
+          ? cell.f 
+          : (cell.v !== undefined && cell.v !== null ? cell.v : '');
+      });
+    });
+
+    const hasColLabels = table.cols && table.cols.some((c: any) => c.label && c.label.trim() !== '');
+    let headers: string[] = [];
+    let rows: (string | number | boolean | null)[][] = [];
+
+    if (hasColLabels) {
+      headers = table.cols.map((c: any) => c.label || c.id || '');
+      rows = rawRows;
+    } else if (rawRows.length > 0) {
+      // First row contains the headers
+      headers = rawRows[0].map(c => String(c || '').trim());
+      rows = rawRows.slice(1);
+    }
+
+    // Filter out rows that are entirely empty or blank
+    const cleanRows = rows.filter(r => r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+
+    return { headers, rows: cleanRows };
+  } catch (err: any) {
+    return { headers: [], rows: [], error: err?.message || 'PARSE_ERROR' };
+  }
+}
+
+/**
+ * Fetch a single Google Sheet Tab via link without Google login
  */
 export async function fetchLiveGoogleSheetTab(
   spreadsheetId: string, 
   sheetTitle: string
-): Promise<{ headers: string[]; rows: (string | number | boolean | null)[][]; error?: string }> {
+): Promise<{ headers: string[]; rows: (string | number | boolean | null)[][]; error?: string; isRestricted?: boolean }> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetTitle)}`;
+    // We request without limit (or select * up to full sheet) to fetch all 500+ rows
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetTitle)}&headers=1`;
     const res = await fetch(url);
     if (!res.ok) {
       return { headers: [], rows: [], error: `HTTP ${res.status}` };
     }
     const text = await res.text();
-    if (text.includes('Sign in to your Google Account') || text.includes('accounts.google.com') || text.includes('Allow Google Sheets access')) {
-      return { headers: [], rows: [], error: 'RESTRICTED_ACCESS' };
-    }
-    
-    // Parse Google Visualization JSON
-    const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
-    if (!jsonMatch || !jsonMatch[1]) {
-      return { headers: [], rows: [], error: 'INVALID_FORMAT' };
-    }
-
-    const data = JSON.parse(jsonMatch[1]);
-    const table = data.table;
-    if (!table || !table.cols || !table.rows) {
-      return { headers: [], rows: [], error: 'NO_TABLE' };
-    }
-
-    const headers: string[] = table.cols.map((col: any) => col.label || col.id || '');
-    const rows: (string | number | boolean | null)[][] = table.rows.map((row: any) => {
-      if (!row || !row.c) return [];
-      return row.c.map((cell: any) => {
-        if (!cell) return '';
-        return cell.f !== undefined ? cell.f : (cell.v !== undefined ? cell.v : '');
-      });
-    });
-
-    return { headers, rows };
+    return parseGvizResponse(text);
   } catch (err: any) {
     return { headers: [], rows: [], error: err?.message || 'FETCH_FAILED' };
   }
+}
+
+/**
+ * Fetch all sheet tabs directly via spreadsheet link without Google login
+ * Fetches all rows (even 500+ rows per tab)
+ */
+export async function fetchAllSheetTabsViaLink(
+  spreadsheetId: string,
+  tabTitles: string[] = DEFAULT_SHEET_TABS
+): Promise<{
+  success: boolean;
+  sheets?: SheetTab[];
+  error?: string;
+  isRestricted?: boolean;
+}> {
+  const cleanId = extractSpreadsheetId(spreadsheetId);
+  const nowTime = new Date().toLocaleTimeString('ar-EG');
+  let hasRestricted = false;
+  let successCount = 0;
+
+  const results = await Promise.allSettled(
+    tabTitles.map(async (title, idx) => {
+      const res = await fetchLiveGoogleSheetTab(cleanId, title);
+      return { title, idx, ...res };
+    })
+  );
+
+  const updatedTabs: SheetTab[] = [];
+
+  for (const item of results) {
+    if (item.status === 'fulfilled') {
+      const { title, idx, headers, rows, error, isRestricted } = item.value;
+      if (isRestricted) {
+        hasRestricted = true;
+      }
+      if (rows && rows.length > 0) {
+        successCount++;
+        updatedTabs.push({
+          id: `tab-link-${idx}`,
+          title,
+          rowCount: rows.length,
+          columnCount: headers.length,
+          headers,
+          rows,
+          updatedAt: nowTime,
+        });
+      }
+    }
+  }
+
+  if (hasRestricted && successCount === 0) {
+    return {
+      success: false,
+      isRestricted: true,
+      error: 'الشيت مقيد الوصول (خاص) على جوجل درايف. يجب ضبط المشاركة على "أي شخص لديه الرابط".',
+    };
+  }
+
+  if (updatedTabs.length > 0) {
+    return {
+      success: true,
+      sheets: updatedTabs,
+    };
+  }
+
+  return {
+    success: false,
+    error: 'لم يتم العثور على صفوف بيانات في التبويبات',
+  };
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { User } from 'firebase/auth';
 import { 
   Activity, 
   RefreshCw, 
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ThemeConfig } from '../types';
 import { SPREADSHEET_URL, SPREADSHEET_ID } from '../services/sheets';
+import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface HeaderProps {
   theme: ThemeConfig;
@@ -26,6 +28,11 @@ interface HeaderProps {
   hasChangesInLastTick: boolean;
   totalAccepted: number;
   totalRejected: number;
+  user?: User | null;
+  onLogin?: () => void;
+  onLogout?: () => void;
+  isAuthLoading?: boolean;
+  authError?: string | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,6 +48,11 @@ export const Header: React.FC<HeaderProps> = ({
   hasChangesInLastTick,
   totalAccepted,
   totalRejected,
+  user,
+  onLogin,
+  onLogout,
+  isAuthLoading = false,
+  authError,
 }) => {
   return (
     <header className={`${theme.headerBg} sticky top-0 z-40 transition-colors duration-300 shadow-md`}>
@@ -83,8 +95,21 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Right/Left Toolbar Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             
+            {/* Google Sheets Live Auth Button */}
+            {onLogin && onLogout && (
+              <GoogleSignInButton
+                user={user || null}
+                isLoading={isAuthLoading}
+                onLogin={onLogin}
+                onLogout={onLogout}
+                onRefresh={onManualRefresh}
+                isSyncing={isSyncing}
+                authError={authError}
+              />
+            )}
+
             {/* Live Ticker Status */}
             <div className={`hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-xl border ${theme.cardBorder} ${theme.cardBg} text-xs`}>
               <div className="relative flex items-center justify-center">

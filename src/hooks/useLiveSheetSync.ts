@@ -1,12 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { User } from 'firebase/auth';
 import { SheetTab, SheetDiff, SyncStats, RiderRequest } from '../types';
 import { 
   SPREADSHEET_ID, 
+  SPREADSHEET_URL,
+  DEFAULT_SHEET_TABS,
+  extractSpreadsheetId,
   getNasrCityInitialData, 
   extractAllRiderRequests,
-  classifyReplyStatus,
+  fetchAllSheetTabsViaLink,
   fetchLiveGoogleSheetTab
 } from '../services/sheets';
+import { 
+  initAuth, 
+  googleSignIn, 
+  googleLogout, 
+  getAccessToken 
+} from '../services/googleAuth';
+import { 
+  fetchAllSheetsFromGoogleApi 
+} from '../services/googleSheetsApi';
 import { 
   playWhatsAppChime, 
   sendWhatsAppSystemNotification, 
@@ -15,6 +28,11 @@ import {
 import { ToastNotificationData } from '../components/WhatsAppNotificationToast';
 
 export function useLiveSheetSync() {
+  // Configurable Sheet URL / ID - default to user's sheet link
+  const [sheetUrl, setSheetUrl] = useState<string>(() => {
+    return localStorage.getItem('nasr_city_custom_sheet_url') || SPREADSHEET_URL;
+  });
+
   const [sheets, setSheets] = useState<SheetTab[]>(() => {
     const saved = localStorage.getItem('nasr_city_sheets_exact_v4');
     if (saved) {
@@ -32,29 +50,40 @@ export function useLiveSheetSync() {
   });
 
   const [diffs, setDiffs] = useState<SheetDiff[]>([]);
-  const [syncIntervalSec, setSyncIntervalSec] = useState<number>(1);
+  const [syncIntervalSec, setSyncIntervalSec] = useState<number>(2);
   const [isPollingActive, setIsPollingActive] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
   const [hasChangesInLastTick, setHasChangesInLastTick] = useState<boolean>(false);
   const [isSheetRestricted, setIsSheetRestricted] = useState<boolean>(false);
-  
+  const [lastFetchStatusMessage, setLastFetchStatusMessage] = useState<string>('جاهز للقراءة');
+
+  // Google OAuth (Optional fallback)
+  const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // WhatsApp Notification State
   const [toastNotification, setToastNotification] = useState<ToastNotificationData | null>(null);
   const [hasPushPermission, setHasPushPermission] = useState<boolean>(() => {
     return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
   });
 
+  // Track previous row count to notify upon new entries in Google Sheets
+  const prevRowsCountRef = useRef<number>(0);
+
   // Compute live Rider Requests
   const riderRequests = extractAllRiderRequests(sheets);
   const totalAccepted = riderRequests.filter(r => r.statusType === 'accepted').length;
   const totalRejected = riderRequests.filter(r => r.statusType === 'rejected').length;
   const totalPending = riderRequests.filter(r => r.statusType === 'pending').length;
+  const totalRowsCount = sheets.reduce((sum, s) => sum + s.rows.length, 0);
 
   const [syncStats, setSyncStats] = useState<SyncStats>({
     syncCount: 1,
     lastSyncTime: new Date(),
-    latencyMs: 82,
+    latencyMs: 65,
     status: 'connected',
     totalAccepted,
     totalRejected,
@@ -70,6 +99,65 @@ export function useLiveSheetSync() {
       totalPending,
     }));
   }, [totalAccepted, totalRejected, totalPending]);
+
+  // Update sheet URL
+  const updateSheetUrl = (newUrl: string) => {
+    const trimmed = newUrl.trim();
+    if (!trimmed) return;
+    setSheetUrl(trimmed);
+    localStorage.setItem('nasr_city_custom_sheet_url', trimmed);
+    // Trigger sync immediately on url change
+    setTimeout(() => {
+      executeSync();
+    }, 100);
+  };
+
+  // Optional Firebase Auth listener for users who still want OAuth
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (currentUser, token) => {
+        setUser(currentUser);
+        setAccessToken(token);
+        setIsSheetRestricted(false);
+        setAuthError(null);
+      },
+      () => {
+        setUser(null);
+        setAccessToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Login handler (optional)
+  const loginWithGoogle = async () => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setUser(res.user);
+        setAccessToken(res.accessToken);
+        setIsSheetRestricted(false);
+      }
+    } catch (err: any) {
+      console.error('Google Sign in failed:', err);
+      setAuthError(err?.message || 'تعذر تسجيل الدخول بحساب جوجل');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Logout handler
+  const logoutGoogle = async () => {
+    try {
+      await googleLogout();
+      setUser(null);
+      setAccessToken(null);
+    } catch (err: any) {
+      console.error('Logout failed:', err);
+    }
+  };
 
   // Request browser notification permission
   const enableNotifications = async () => {
@@ -98,6 +186,7 @@ export function useLiveSheetSync() {
     setToastNotification(toast);
 
     if (isSoundEnabled) {
+      playWhatsAppChime();
       sendWhatsAppSystemNotification(
         `🛵 طلب طيار جديد: ${riderId}`,
         `قام الكابتن ${riderId} بتقديم طلب ${requestType} في تبويب ${tabTitle} (${timeOrNote || ''})`
@@ -115,64 +204,95 @@ export function useLiveSheetSync() {
     triggerWhatsAppAlert('3908789', 'تزويد الشيفتات', 'تزويد شيفت طيار', '12:00 AM');
   };
 
-  // Execute 1-second pulse & real Google Sheet online fetch
+  // Main sync execution loop: Fetch all 500+ rows directly from sheet link WITHOUT login
   const executeSync = useCallback(async () => {
-    const startTime = performance.now();
     setIsSyncing(true);
+    const startTime = performance.now();
+    const cleanId = extractSpreadsheetId(sheetUrl);
 
     try {
-      // Attempt live fetch from Google Sheet
-      const activeTitle = 'تزويد الشيفتات';
-      const liveRes = await fetchLiveGoogleSheetTab(SPREADSHEET_ID, activeTitle);
+      // 1. If user is logged into Google and has an access token, use Google Sheets REST API
+      if (accessToken) {
+        const apiRes = await fetchAllSheetsFromGoogleApi(accessToken);
+        const endTime = performance.now();
+        const latency = Math.max(20, Math.round(endTime - startTime));
 
-      const endTime = performance.now();
-      const latency = Math.max(25, Math.round(endTime - startTime) || 65);
-      const nowTime = new Date().toLocaleTimeString('ar-EG');
+        if (apiRes.success && apiRes.sheets && apiRes.sheets.length > 0) {
+          setIsSheetRestricted(false);
+          setLastFetchStatusMessage(`تم جلب ${apiRes.sheets.reduce((a, b) => a + b.rows.length, 0)} صف من جوجل مباشرة`);
+          setSheets(apiRes.sheets);
+          try {
+            localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(apiRes.sheets));
+          } catch {}
 
-      if (liveRes.error === 'RESTRICTED_ACCESS') {
-        setIsSheetRestricted(true);
-      } else if (liveRes.rows && liveRes.rows.length > 0) {
-        setIsSheetRestricted(false);
-        // Update sheets with live data from Google Sheets
-        setSheets((currentSheets) => {
-          return currentSheets.map((s) => {
-            if (s.title === activeTitle && liveRes.rows.length > 0) {
-              return {
-                ...s,
-                headers: liveRes.headers.length > 0 ? liveRes.headers : s.headers,
-                rows: liveRes.rows,
-                rowCount: liveRes.rows.length,
-                updatedAt: nowTime,
-              };
-            }
-            return {
-              ...s,
-              updatedAt: nowTime,
-            };
-          });
-        });
+          setSyncStats(prev => ({
+            ...prev,
+            syncCount: prev.syncCount + 1,
+            lastSyncTime: new Date(),
+            latencyMs: latency,
+            status: 'connected',
+          }));
+          setIsSyncing(false);
+          return;
+        }
       }
 
-      setSheets((currentSheets) => {
+      // 2. PRIMARY PATH: Fetch directly from the Google Sheet link without any login
+      const linkRes = await fetchAllSheetTabsViaLink(cleanId, DEFAULT_SHEET_TABS);
+      const endTime = performance.now();
+      const latency = Math.max(20, Math.round(endTime - startTime));
+
+      if (linkRes.success && linkRes.sheets && linkRes.sheets.length > 0) {
+        setIsSheetRestricted(false);
+        const totalRowsFetched = linkRes.sheets.reduce((acc, s) => acc + s.rows.length, 0);
+        setLastFetchStatusMessage(`تم سحب ${totalRowsFetched} صف عبر رابط الشيت بنجاح`);
+
+        // Check if there are newly added requests to trigger notification
+        if (prevRowsCountRef.current > 0 && totalRowsFetched > prevRowsCountRef.current) {
+          const firstSheet = linkRes.sheets[0];
+          if (firstSheet && firstSheet.rows.length > 0) {
+            const latestRow = firstSheet.rows[0];
+            const riderId = String(latestRow[3] || latestRow[1] || 'جديد');
+            triggerWhatsAppAlert(riderId, firstSheet.title, 'طلب جديد تم رصده في الشيت', String(latestRow[2] || ''));
+          }
+        }
+        prevRowsCountRef.current = totalRowsFetched;
+
+        // Merge with existing tabs to keep any unrepresented tabs intact
+        setSheets(currentSheets => {
+          const newMap = new Map(linkRes.sheets!.map(s => [s.title, s]));
+          return currentSheets.map(s => newMap.get(s.title) || s);
+        });
+
         try {
-          localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(currentSheets));
+          localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(sheets));
         } catch {}
 
-        return currentSheets.map((s) => ({
-          ...s,
-          updatedAt: nowTime,
+        setSyncStats(prev => ({
+          ...prev,
+          syncCount: prev.syncCount + 1,
+          lastSyncTime: new Date(),
+          latencyMs: latency,
+          status: 'connected',
         }));
-      });
-
-      setSyncStats((prev) => ({
-        ...prev,
-        syncCount: prev.syncCount + 1,
-        lastSyncTime: new Date(),
-        latencyMs: latency,
-        status: 'connected',
-      }));
+      } else if (linkRes.isRestricted) {
+        setIsSheetRestricted(true);
+        setLastFetchStatusMessage('الشيت محمي في جوجل درايف - اضبط المشاركة على "أي شخص لديه الرابط"');
+        setSyncStats(prev => ({
+          ...prev,
+          status: 'error',
+          errorMessage: 'الشيت محمي - اضبط إذن المشاركة',
+        }));
+      } else {
+        // Keep current data and report status
+        setSyncStats(prev => ({
+          ...prev,
+          status: 'connected',
+        }));
+      }
     } catch (err: any) {
-      setSyncStats((prev) => ({
+      console.warn('Sync error:', err);
+      setSyncStats(prev => ({
         ...prev,
         status: 'error',
         errorMessage: err?.message,
@@ -180,9 +300,9 @@ export function useLiveSheetSync() {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [sheetUrl, accessToken, sheets]);
 
-  // 1-Second Timer Ticker
+  // Polling Interval
   useEffect(() => {
     if (!isPollingActive) return;
 
@@ -192,123 +312,6 @@ export function useLiveSheetSync() {
 
     return () => clearInterval(intervalId);
   }, [isPollingActive, syncIntervalSec, executeSync]);
-
-  // Update single row reply status (e.g. approve or reject request directly)
-  const updateRequestReply = (tabTitle: string, riderId: string, newReply: 'مقبول' | 'مرفوض', reason?: string) => {
-    setSheets(current => {
-      const updated = current.map(sheet => {
-        if (sheet.title !== tabTitle) return sheet;
-
-        const riderColIdx = sheet.headers.findIndex(h => /rider\s*id|كود\s*الطيار/i.test(h));
-        const replyColIdx = sheet.headers.findIndex(h => /الرد\s*عل[يى]\s*الطلب/i.test(h));
-        const statusColIdx = sheet.headers.findIndex(h => /حالة\s*الطلب/i.test(h));
-        const reasonColIdx = sheet.headers.findIndex(h => /سبب\s*الرفض/i.test(h));
-
-        if (riderColIdx === -1) return sheet;
-
-        const targetRowIdx = sheet.rows.findIndex(r => String(r[riderColIdx]).trim() === riderId.trim());
-        if (targetRowIdx === -1) return sheet;
-
-        const newRows = [...sheet.rows];
-        const newRow = [...newRows[targetRowIdx]];
-        
-        if (replyColIdx !== -1) newRow[replyColIdx] = newReply;
-        if (statusColIdx !== -1) newRow[statusColIdx] = 'تم الرد';
-        if (reasonColIdx !== -1) {
-          newRow[reasonColIdx] = newReply === 'مقبول' ? '' : (reason || 'شيفت مكسور / سيستم');
-        }
-
-        const oldReply = String(sheet.rows[targetRowIdx][replyColIdx] || '');
-        
-        // Log diff
-        const newDiff: SheetDiff = {
-          id: `${sheet.title}-${riderId}-${Date.now()}`,
-          sheetTitle: sheet.title,
-          rowIndex: targetRowIdx + 1,
-          columnIndex: replyColIdx + 1,
-          columnName: sheet.headers[replyColIdx] || 'الرد على الطلب',
-          oldValue: oldReply || 'قيد الإنتظار',
-          newValue: newReply,
-          timestamp: new Date().toLocaleTimeString('ar-EG'),
-        };
-
-        setDiffs(prev => [newDiff, ...prev].slice(0, 100));
-        setHasChangesInLastTick(true);
-        setTimeout(() => setHasChangesInLastTick(false), 1200);
-
-        if (isSoundEnabled) {
-          playWhatsAppChime();
-        }
-
-        newRows[targetRowIdx] = newRow;
-        return {
-          ...sheet,
-          rows: newRows,
-          updatedAt: new Date().toLocaleTimeString('ar-EG'),
-        };
-      });
-
-      try {
-        localStorage.setItem('nasr_city_sheets_data', JSON.stringify(updated));
-      } catch {}
-
-      return updated;
-    });
-  };
-
-  // Add a new fast rider request & trigger notification
-  const addNewRiderRequest = (tabTitle: string, riderId: string, timeOrNote: string) => {
-    // Fire WhatsApp Notification alert
-    triggerWhatsAppAlert(riderId, tabTitle, 'طلب جديد', timeOrNote);
-
-    setSheets(current => {
-      const now = new Date().toLocaleString('ar-EG');
-      const updated = current.map(sheet => {
-        if (sheet.title !== tabTitle) return sheet;
-
-        let newRow: (string | number | boolean | null)[] = [];
-        if (sheet.id === 'tab-increase-shifts') {
-          newRow = [now, 'تزويدات شيفتات الطيارين', timeOrNote || '12:00 AM', riderId, 'قيد الإنتظار', 'قيد المراجعة', ''];
-        } else if (sheet.id === 'tab-break-release') {
-          newRow = [now, 'فك بريك', riderId, 'قيد الإنتظار', 'قيد المراجعة', ''];
-        } else if (sheet.id === 'tab-shift-actions') {
-          newRow = [now, 'قفل شيفت', timeOrNote || 'ظرف طارئ', riderId, 'مرفق', 'قيد الإنتظار', 'قيد المراجعة', ''];
-        } else {
-          newRow = [now, riderId, timeOrNote || 'طلب جديد', 'قيد الإنتظار', 'قيد المراجعة', ''];
-        }
-
-        const newRows = [newRow, ...sheet.rows];
-
-        // Diff log
-        const newDiff: SheetDiff = {
-          id: `new-${sheet.title}-${riderId}-${Date.now()}`,
-          sheetTitle: sheet.title,
-          rowIndex: 2,
-          columnIndex: 1,
-          columnName: 'إضافة طلب طيار جديد',
-          oldValue: '(طلب جديد)',
-          newValue: `كود ${riderId} - ${sheet.title}`,
-          timestamp: new Date().toLocaleTimeString('ar-EG'),
-        };
-        setDiffs(prev => [newDiff, ...prev].slice(0, 100));
-        setHasChangesInLastTick(true);
-        setTimeout(() => setHasChangesInLastTick(false), 1200);
-
-        return {
-          ...sheet,
-          rows: newRows,
-          rowCount: newRows.length,
-          updatedAt: new Date().toLocaleTimeString('ar-EG'),
-        };
-      });
-
-      try {
-        localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(updated));
-      } catch {}
-
-      return updated;
-    });
-  };
 
   const resetToOriginalData = () => {
     const fresh = getNasrCityInitialData();
@@ -323,8 +326,11 @@ export function useLiveSheetSync() {
   const dismissToast = () => setToastNotification(null);
 
   return {
-    spreadsheetId: SPREADSHEET_ID,
+    spreadsheetId: extractSpreadsheetId(sheetUrl),
+    sheetUrl,
+    updateSheetUrl,
     sheets,
+    totalRowsCount,
     riderRequests,
     diffs,
     clearDiffs,
@@ -338,8 +344,6 @@ export function useLiveSheetSync() {
     toggleSound,
     hasChangesInLastTick,
     syncStats,
-    updateRequestReply,
-    addNewRiderRequest,
     resetToOriginalData,
     toastNotification,
     dismissToast,
@@ -348,5 +352,13 @@ export function useLiveSheetSync() {
     hasPushPermission,
     enableNotifications,
     isSheetRestricted,
+    lastFetchStatusMessage,
+    // Google Auth (Optional)
+    user,
+    accessToken,
+    isAuthLoading,
+    authError,
+    loginWithGoogle,
+    logoutGoogle,
   };
 }
