@@ -47,10 +47,14 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 gap-4">
           
-          {/* Brand & App Title */}
+          {/* Brand & App Title with Official Logo Icon */}
           <div className="flex items-center gap-3.5">
-            <div className={`relative p-2.5 rounded-xl ${theme.badge} border shadow-inner flex items-center justify-center`}>
-              <Activity className={`w-7 h-7 ${theme.accentText} animate-pulse`} />
+            <div className="relative flex items-center justify-center">
+              <img
+                src="/app-icon.svg"
+                alt="أيقونة تشغيل العز مدينة نصر"
+                className="w-11 h-11 rounded-xl shadow-lg ring-1 ring-cyan-500/40 object-cover"
+              />
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
