@@ -27,8 +27,6 @@ interface RiderRepliesManagerProps {
   theme: ThemeConfig;
   requests: RiderRequest[];
   sheetTitles: string[];
-  onUpdateReply: (tabTitle: string, riderId: string, reply: 'مقبول' | 'مرفوض', reason?: string) => void;
-  onAddNewRequest: (tabTitle: string, riderId: string, note: string) => void;
   syncIntervalSec: number;
   onTestWhatsAppAlert?: () => void;
   hasPushPermission?: boolean;
@@ -41,8 +39,6 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   theme,
   requests,
   sheetTitles,
-  onUpdateReply,
-  onAddNewRequest,
   syncIntervalSec,
   onTestWhatsAppAlert,
   hasPushPermission,
@@ -55,17 +51,6 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   const [selectedTabFilter, setSelectedTabFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [bulkCopied, setBulkCopied] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-
-  // Reject Reason Modal state
-  const [rejectModalReq, setRejectModalReq] = useState<RiderRequest | null>(null);
-  const [selectedReasonPreset, setSelectedReasonPreset] = useState<string>('شيفت مكسور');
-  const [customRejectReason, setCustomRejectReason] = useState<string>('');
-
-  // New Request Form state
-  const [newRiderId, setNewRiderId] = useState('');
-  const [newTabTitle, setNewTabTitle] = useState(sheetTitles[0] || 'تزويد الشيفتات');
-  const [newNote, setNewNote] = useState('');
 
   // Counts
   const acceptedCount = useMemo(() => requests.filter(r => r.statusType === 'accepted').length, [requests]);
@@ -118,15 +103,6 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
     setTimeout(() => setBulkCopied(false), 2500);
   };
 
-  const handleCreateRequest = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newRiderId.trim()) return;
-    onAddNewRequest(newTabTitle, newRiderId.trim(), newNote.trim());
-    setNewRiderId('');
-    setNewNote('');
-    setIsAddModalOpen(false);
-  };
-
   return (
     <div className="space-y-5">
       
@@ -155,20 +131,12 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
           {/* Quick Actions */}
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
-              onClick={() => setIsAddModalOpen(true)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold ${theme.accent} shadow-md flex items-center gap-1.5 transition-all cursor-pointer`}
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>إضافة طلب كابتن جديد</span>
-            </button>
-
-            <button
               onClick={handleBulkCopy}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold border ${theme.cardBorder} bg-slate-900/80 hover:bg-slate-800 text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer`}
               title="نسخ تقرير مجمع لإرساله لجروب الواتساب أو التليجرام"
             >
               {bulkCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4 text-cyan-400" />}
-              <span>{bulkCopied ? 'تم نسخ التقرير المجمع' : 'نسخ تقرير للجروب'}</span>
+              <span>{bulkCopied ? 'تم نسخ التقرير المجمع' : 'نسخ تقرير الحالات للجروب'}</span>
             </button>
           </div>
         </div>
@@ -489,47 +457,13 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                   )}
                 </div>
 
-                {/* Card Actions Footer: Quick Action Buttons & WhatsApp Dispatch */}
-                <div className="pt-3 mt-1 space-y-2">
-                  
-                  {/* Quick Change Status (Approve / Reject) */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onUpdateReply(req.tabTitle, req.riderId, 'مقبول')}
-                      className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-1 cursor-pointer ${
-                        isAccepted 
-                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm' 
-                          : 'border-emerald-800/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
-                      }`}
-                      title="تعيين حالة الطلب إلى مقبول"
-                    >
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      <span>قبول الطلب</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setRejectModalReq(req);
-                        setSelectedReasonPreset(req.rejectReason || 'شيفت مكسور');
-                        setCustomRejectReason('');
-                      }}
-                      className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-1 cursor-pointer ${
-                        isRejected 
-                          ? 'bg-rose-600 text-white border-rose-500 shadow-sm' 
-                          : 'border-rose-800/50 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50'
-                      }`}
-                      title="تحديد سبب الرفض ورفض الطلب"
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>رفض مع السبب</span>
-                    </button>
-                  </div>
-
+                {/* Card Actions Footer: WhatsApp Dispatch from Sheet Data */}
+                <div className="pt-3 mt-1">
                   {/* Send WhatsApp & Copy Buttons */}
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleSendWhatsApp(req)}
-                      className="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                      className="flex-1 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
                       title="إرسال الرد للكابتن على الواتساب مع رسالة جاهزة"
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -538,7 +472,7 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
 
                     <button
                       onClick={() => handleCopyMessage(req)}
-                      className="p-1.5 px-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                      className="p-2 px-3 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                       title="نسخ نص الرد بالكامل للحافظة"
                     >
                       {copiedId === req.id ? (
@@ -546,10 +480,9 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
-                      <span>{copiedId === req.id ? 'تم' : 'نسخ'}</span>
+                      <span>{copiedId === req.id ? 'تم النسخ' : 'نسخ النص'}</span>
                     </button>
                   </div>
-
                 </div>
 
               </div>
@@ -557,184 +490,6 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
           })
         )}
       </div>
-
-      {/* Add New Request Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${theme.cardBg} ${theme.cardBorder}`}>
-            <h3 className="text-base font-black text-slate-100 mb-1">
-              إضافة طلب طيار جديد لقاعدة البيانات
-            </h3>
-            <p className={`text-xs ${theme.textMuted} mb-4`}>
-              سيتم إدراجه فوراً في التبويب المستهدف وتحديث الإحصائيات
-            </p>
-
-            <form onSubmit={handleCreateRequest} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  كود الطيار (Rider ID) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: 3908789"
-                  value={newRiderId}
-                  onChange={(e) => setNewRiderId(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-mono rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  التبويب المستهدف *
-                </label>
-                <select
-                  value={newTabTitle}
-                  onChange={(e) => setNewTabTitle(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-cyan-500"
-                >
-                  {sheetTitles.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  الوقت أو الملاحظة المطلوبة
-                </label>
-                <input
-                  type="text"
-                  placeholder="مثال: 12:00 AM أو فك بريك سيستم"
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className={`px-5 py-2 rounded-xl text-xs font-bold ${theme.accent}`}
-                >
-                  إضافة الآن
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 2: Rejection Reason Selection Modal */}
-      {rejectModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md bg-slate-950 border border-rose-500/40 rounded-2xl p-5 shadow-2xl space-y-4 ring-2 ring-rose-500/20">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-rose-400">
-                <XCircle className="w-5 h-5" />
-                <h3 className="font-bold text-sm text-slate-100">
-                  تحديد سبب رفض طلب الكابتن [{rejectModalReq.riderId}]
-                </h3>
-              </div>
-              <button
-                onClick={() => setRejectModalReq(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-300 space-y-1">
-              <p>التبويب: <b className="text-cyan-400 font-mono">{rejectModalReq.tabTitle}</b></p>
-              {rejectModalReq.targetTime && (
-                <p>التوقيت المطلوب: <b className="text-amber-300 font-mono">{rejectModalReq.targetTime}</b></p>
-              )}
-            </div>
-
-            {/* Reason Presets Grid */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-200">
-                اختر سبب الرفض المباشر:
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  'شيفت مكسور',
-                  'بريك سيستم',
-                  'لا يوجد شيفت',
-                  'استهلاك الحد الأقصى للساعات',
-                  'تضارب مواعيد الشيفت',
-                  'الشيفت منتهي بالفعل للوقت الحالي',
-                  'الوقت المطلوب أقل من نهاية الشيفت',
-                  'غير مستوفي الشروط',
-                  'أخرى (كتابة سبب مخصص)'
-                ].map((reasonOption) => (
-                  <button
-                    key={reasonOption}
-                    type="button"
-                    onClick={() => setSelectedReasonPreset(reasonOption)}
-                    className={`p-2 rounded-xl text-[11px] font-bold border text-right transition-all cursor-pointer ${
-                      selectedReasonPreset === reasonOption
-                        ? 'bg-rose-950/80 border-rose-500 text-rose-200 ring-2 ring-rose-500/40'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                    }`}
-                  >
-                    {reasonOption}
-                  </button>
-                ))}
-              </div>
-
-              {selectedReasonPreset === 'أخرى (كتابة سبب مخصص)' && (
-                <div className="pt-2">
-                  <input
-                    type="text"
-                    placeholder="اكتب سبب الرفض هنا بالتفصيل..."
-                    value={customRejectReason}
-                    onChange={(e) => setCustomRejectReason(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-900 border border-rose-500/60 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-rose-400"
-                    autoFocus
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setRejectModalReq(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white cursor-pointer"
-              >
-                تراجع
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => {
-                  const finalReason = selectedReasonPreset === 'أخرى (كتابة سبب مخصص)'
-                    ? (customRejectReason.trim() || 'شيفت مكسور / سيستم')
-                    : selectedReasonPreset;
-
-                  onUpdateReply(rejectModalReq.tabTitle, rejectModalReq.riderId, 'مرفوض', finalReason);
-                  setRejectModalReq(null);
-                }}
-                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-rose-600 hover:bg-rose-500 text-white shadow-lg cursor-pointer flex items-center gap-1.5 transition-all"
-              >
-                <XCircle className="w-4 h-4" />
-                <span>تأكيد الرفض مع حفظ السبب</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

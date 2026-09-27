@@ -114,8 +114,6 @@ export default function App() {
             theme={theme}
             requests={riderRequests}
             sheetTitles={sheetTitles}
-            onUpdateReply={updateRequestReply}
-            onAddNewRequest={addNewRiderRequest}
             syncIntervalSec={syncIntervalSec}
             onTestWhatsAppAlert={testWhatsAppAlert}
             hasPushPermission={hasPushPermission}
@@ -190,8 +188,6 @@ export default function App() {
       <WhatsAppNotificationToast
         notification={toastNotification}
         onClose={dismissToast}
-        onAccept={(tab, id) => updateRequestReply(tab, id, 'مقبول')}
-        onReject={(tab, id) => updateRequestReply(tab, id, 'مرفوض', 'شيفت مكسور / سيستم')}
         onViewReplies={() => setActiveMainTab('replies')}
       />
 
