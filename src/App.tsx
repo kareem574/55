@@ -12,6 +12,7 @@ import { SettingsView } from './components/SettingsView';
 import { ThemeModal } from './components/ThemeModal';
 import { WhatsAppNotificationToast } from './components/WhatsAppNotificationToast';
 import { SheetUrlSyncBar } from './components/SheetUrlSyncBar';
+import { GoogleDriveSheetPickerModal } from './components/GoogleDriveSheetPickerModal';
 import { SPREADSHEET_ID } from './services/sheets';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
     return (localStorage.getItem('nasr_city_theme') as ThemeId) || 'navy-ops';
   });
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [isDrivePickerOpen, setIsDrivePickerOpen] = useState(false);
 
   const theme: ThemeConfig = THEMES[currentThemeId] || THEMES['navy-ops'];
 
@@ -35,6 +37,7 @@ export default function App() {
 
   // Live Sheet Engine (Direct link fetch, Zero login required, 500+ rows)
   const {
+    spreadsheetId,
     sheetUrl,
     updateSheetUrl,
     sheets,
@@ -105,6 +108,7 @@ export default function App() {
         onLogout={logoutGoogle}
         isAuthLoading={isAuthLoading}
         authError={authError}
+        onOpenDrivePicker={() => setIsDrivePickerOpen(true)}
       />
 
       {/* Navigation Tabs */}
@@ -120,9 +124,9 @@ export default function App() {
       />
 
       {/* Main View Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-6">
         
-        {/* Direct Google Sheets Link Sync Bar (No Google login required, up to 500+ rows) */}
+        {/* Direct Google Sheets Link Sync Bar with Google Auth & Sheet Picker */}
         <SheetUrlSyncBar
           theme={theme}
           sheetUrl={sheetUrl}
@@ -132,6 +136,10 @@ export default function App() {
           totalRowsCount={totalRowsCount}
           isSheetRestricted={isSheetRestricted}
           lastFetchStatusMessage={lastFetchStatusMessage}
+          user={user}
+          onLogin={loginWithGoogle}
+          onOpenPicker={() => setIsDrivePickerOpen(true)}
+          isAuthLoading={isAuthLoading}
         />
         
         {/* Tab 1: Rider Replies Manager (مقبول / مرفوض) */}
@@ -223,6 +231,18 @@ export default function App() {
         onClose={() => setIsThemeModalOpen(false)}
         currentTheme={theme}
         onSelectTheme={handleSelectTheme}
+      />
+
+      {/* Google Drive Sheet Picker Modal */}
+      <GoogleDriveSheetPickerModal
+        isOpen={isDrivePickerOpen}
+        onClose={() => setIsDrivePickerOpen(false)}
+        theme={theme}
+        accessToken={accessToken}
+        currentSpreadsheetId={spreadsheetId}
+        onSelectSpreadsheet={(id) => {
+          updateSheetUrl(`https://docs.google.com/spreadsheets/d/${id}/edit`);
+        }}
       />
     </div>
   );

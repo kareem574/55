@@ -323,7 +323,7 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
       </div>
 
       {/* Filter and Search Controls */}
-      <div className={`p-4 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} flex flex-col md:flex-row items-center justify-between gap-3`}>
+      <div className={`p-3 sm:p-4 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3`}>
         
         {/* Search Input for Rider ID */}
         <div className="relative w-full md:w-80">
@@ -346,17 +346,16 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
         </div>
 
         {/* Filter Controls: Date, Tab, and Count */}
-        <div className="flex items-center gap-2.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar flex-wrap">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 w-full md:w-auto">
           {/* Date Selection Filter (Timestamp) */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
             <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span className="text-xs text-slate-400 shrink-0">التاريخ (Timestamp):</span>
             <select
               value={selectedDateFilter}
               onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+              className="flex-1 sm:flex-initial px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
             >
-              <option value="all">كل التواريخ الموجودة بالشيت ({availableDates.length > 0 ? availableDates.length : 'الكل'})</option>
+              <option value="all">كل التواريخ ({availableDates.length > 0 ? availableDates.length : 'الكل'})</option>
               {availableDates.map((dateStr) => (
                 <option key={dateStr} value={dateStr}>
                   {dateStr}
@@ -366,12 +365,11 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
           </div>
 
           {/* Tab Selection Filter */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs text-slate-400 shrink-0">التبويب:</span>
+          <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
             <select
               value={selectedTabFilter}
               onChange={(e) => setSelectedTabFilter(e.target.value)}
-              className="px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500"
+              className="flex-1 sm:flex-initial px-2.5 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500"
             >
               <option value="all">كافة التبويبات الـ 8</option>
               {sheetTitles.map((title) => (
@@ -380,11 +378,11 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
                 </option>
               ))}
             </select>
-          </div>
 
-          <span className={`text-xs ${theme.textMuted} mr-auto md:mr-2 shrink-0`}>
-            النتائج: <b className="text-slate-200 font-mono">{filteredRequests.length}</b>
-          </span>
+            <span className={`text-xs ${theme.textMuted} mr-auto sm:mr-2 shrink-0 font-bold`}>
+              ({filteredRequests.length})
+            </span>
+          </div>
         </div>
 
       </div>

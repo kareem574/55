@@ -213,7 +213,7 @@ export function useLiveSheetSync() {
     try {
       // 1. If user is logged into Google and has an access token, use Google Sheets REST API
       if (accessToken) {
-        const apiRes = await fetchAllSheetsFromGoogleApi(accessToken);
+        const apiRes = await fetchAllSheetsFromGoogleApi(accessToken, cleanId);
         const endTime = performance.now();
         const latency = Math.max(20, Math.round(endTime - startTime));
 

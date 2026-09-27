@@ -8,10 +8,80 @@ export interface GoogleSheetsFetchResult {
   isAuthError?: boolean;
 }
 
+export interface DriveSpreadsheetItem {
+  id: string;
+  name: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  iconLink?: string;
+  owners?: Array<{ displayName?: string; emailAddress?: string }>;
+}
+
 /**
- * Fetch all sheets from the Google Sheets API using the OAuth access token
+ * List spreadsheets from user's Google Drive
  */
-export async function fetchAllSheetsFromGoogleApi(accessToken: string): Promise<GoogleSheetsFetchResult> {
+export async function listUserSpreadsheetsFromDrive(accessToken: string): Promise<{
+  success: boolean;
+  files: DriveSpreadsheetItem[];
+  error?: string;
+  isAuthError?: boolean;
+}> {
+  if (!accessToken) {
+    return {
+      success: false,
+      files: [],
+      error: 'رمز الوصول مفقود، يرجى تسجيل الدخول',
+      isAuthError: true,
+    };
+  }
+
+  try {
+    const q = encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+    const fields = encodeURIComponent('files(id, name, modifiedTime, webViewLink, iconLink, owners)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime%20desc&pageSize=30&fields=${fields}`;
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      return {
+        success: false,
+        files: [],
+        error: 'انتهت صلاحية الجلسة أو لا توجد صلاحية للوصول لجوجل درايف.',
+        isAuthError: true,
+      };
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`خطأ درايف (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    return {
+      success: true,
+      files: data.files || [],
+    };
+  } catch (err: any) {
+    console.error('Failed to list spreadsheets from Drive:', err);
+    return {
+      success: false,
+      files: [],
+      error: err?.message || 'تعذر جلب ملفات الشيت من Google Drive',
+    };
+  }
+}
+
+/**
+ * Fetch all sheets & 500+ rows from Google Sheets API using OAuth access token
+ */
+export async function fetchAllSheetsFromGoogleApi(
+  accessToken: string,
+  spreadsheetId: string = SPREADSHEET_ID
+): Promise<GoogleSheetsFetchResult> {
   if (!accessToken) {
     return {
       success: false,
@@ -21,8 +91,10 @@ export async function fetchAllSheetsFromGoogleApi(accessToken: string): Promise<
   }
 
   try {
+    const cleanId = spreadsheetId.trim();
+
     // 1. Fetch spreadsheet metadata to get all tab titles and sheet IDs
-    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`;
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?fields=sheets.properties`;
     const metaRes = await fetch(metaUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -53,12 +125,12 @@ export async function fetchAllSheetsFromGoogleApi(accessToken: string): Promise<
       throw new Error('لم يتم العثور على أي تبويبات في ملف الشيت.');
     }
 
-    // 2. Batch get values for all sheets in one single efficient HTTP request
+    // 2. Batch get values for all sheets in one single efficient HTTP request (A1:Z1000 up to 1000 rows)
     const rangesQuery = sheetPropertiesList
-      .map(s => `ranges=${encodeURIComponent(`'${s.title}'!A1:Z500`)}`)
+      .map(s => `ranges=${encodeURIComponent(`'${s.title}'!A1:Z1000`)}`)
       .join('&');
 
-    const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?${rangesQuery}`;
+    const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values:batchGet?${rangesQuery}`;
     const batchRes = await fetch(batchUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
