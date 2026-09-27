@@ -10,8 +10,8 @@ import { LiveSheetsExplorer } from './components/LiveSheetsExplorer';
 import { ChangeLogView } from './components/ChangeLogView';
 import { SettingsView } from './components/SettingsView';
 import { ThemeModal } from './components/ThemeModal';
+import { ImportDataModal } from './components/ImportDataModal';
 import { WhatsAppNotificationToast } from './components/WhatsAppNotificationToast';
-import { SPREADSHEET_ID } from './services/sheets';
 
 export default function App() {
   // Theme state
@@ -19,6 +19,7 @@ export default function App() {
     return (localStorage.getItem('nasr_city_theme') as ThemeId) || 'navy-ops';
   });
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const theme: ThemeConfig = THEMES[currentThemeId] || THEMES['navy-ops'];
 
@@ -27,13 +28,14 @@ export default function App() {
     localStorage.setItem('nasr_city_theme', newThemeId);
   };
 
-  // Tabs state - Default to 'replies' since user specifically requested:
-  // "انا كل ال محتاجه التطبيق يقراء كل البيانات زي كده ويبعت مين اترد عليه مقبول ومين مرفوض"
+  // Tabs state - Default to 'replies'
   const [activeMainTab, setActiveMainTab] = useState<MainTabId>('replies');
   const [activeSheetTabId, setActiveSheetTabId] = useState<string>('tab-increase-shifts');
 
-  // Live Sheet Engine (Zero login required, 1-second real-time heartbeat)
+  // Live Sheet Engine with Google OAuth API v4 & Auto-Sync
   const {
+    spreadsheetId,
+    setSpreadsheetId,
     sheets,
     riderRequests,
     diffs,
@@ -57,6 +59,15 @@ export default function App() {
     hasPushPermission,
     enableNotifications,
     isSheetRestricted,
+    lastSyncError,
+    // Google Auth
+    currentUser,
+    isLoggingIn,
+    authError,
+    handleGoogleLogin,
+    handleGoogleLogout,
+    // Manual Data Import
+    importPastedData,
   } = useLiveSheetSync();
 
   // Export JSON helper
@@ -91,6 +102,11 @@ export default function App() {
         hasChangesInLastTick={hasChangesInLastTick}
         totalAccepted={syncStats.totalAccepted}
         totalRejected={syncStats.totalRejected}
+        currentUser={currentUser}
+        isLoggingIn={isLoggingIn}
+        onGoogleLogin={handleGoogleLogin}
+        onGoogleLogout={handleGoogleLogout}
+        onOpenImportModal={() => setIsImportModalOpen(true)}
       />
 
       {/* Navigation Tabs */}
@@ -120,6 +136,11 @@ export default function App() {
             onEnableNotifications={enableNotifications}
             isSheetRestricted={isSheetRestricted}
             onManualRefresh={executeSync}
+            currentUser={currentUser}
+            isLoggingIn={isLoggingIn}
+            onGoogleLogin={handleGoogleLogin}
+            onOpenImportModal={() => setIsImportModalOpen(true)}
+            lastSyncError={lastSyncError}
           />
         )}
 
@@ -131,7 +152,7 @@ export default function App() {
             activeSheetId={activeSheetTabId}
             onSelectSheetTab={(id) => setActiveSheetTabId(id)}
             recentDiffs={diffs.slice(0, 15)}
-            spreadsheetId={SPREADSHEET_ID}
+            spreadsheetId={spreadsheetId}
           />
         )}
 
@@ -153,7 +174,7 @@ export default function App() {
           />
         )}
 
-        {/* Tab 4: Live 1-Second Changes Diff Audit */}
+        {/* Tab 4: Live Changes Diff Audit */}
         {activeMainTab === 'diffs' && (
           <ChangeLogView
             theme={theme}
@@ -180,9 +201,25 @@ export default function App() {
             onManualRefresh={executeSync}
             onExportAllJson={handleExportAllJson}
             onResetData={resetToOriginalData}
+            spreadsheetId={spreadsheetId}
+            onUpdateSpreadsheetId={setSpreadsheetId}
+            currentUser={currentUser}
+            isLoggingIn={isLoggingIn}
+            onGoogleLogin={handleGoogleLogin}
+            onGoogleLogout={handleGoogleLogout}
+            onOpenImportModal={() => setIsImportModalOpen(true)}
           />
         )}
       </main>
+
+      {/* Manual Data Import Modal */}
+      <ImportDataModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        theme={theme}
+        sheetTitles={sheetTitles}
+        onImport={importPastedData}
+      />
 
       {/* WhatsApp-Style Notification Pop-up Toast */}
       <WhatsAppNotificationToast

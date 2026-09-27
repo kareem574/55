@@ -10,11 +10,15 @@ import {
   RotateCcw,
   FileSpreadsheet,
   Share2,
-  CheckCircle2
+  CheckCircle2,
+  Key,
+  ClipboardPaste,
+  Save
 } from 'lucide-react';
 import { ThemeConfig, SyncStats } from '../types';
 import { playUpdateChime } from '../utils/audio';
-import { SPREADSHEET_URL, SPREADSHEET_ID } from '../services/sheets';
+import { SPREADSHEET_URL, SPREADSHEET_ID, parseSpreadsheetId } from '../services/sheets';
+import { User } from '../services/firebase';
 
 interface SettingsViewProps {
   theme: ThemeConfig;
@@ -28,6 +32,13 @@ interface SettingsViewProps {
   onManualRefresh: () => void;
   onExportAllJson: () => void;
   onResetData: () => void;
+  spreadsheetId: string;
+  onUpdateSpreadsheetId: (idOrUrl: string) => void;
+  currentUser?: User | null;
+  isLoggingIn?: boolean;
+  onGoogleLogin?: () => void;
+  onGoogleLogout?: () => void;
+  onOpenImportModal?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -42,8 +53,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onManualRefresh,
   onExportAllJson,
   onResetData,
+  spreadsheetId,
+  onUpdateSpreadsheetId,
+  currentUser,
+  isLoggingIn,
+  onGoogleLogin,
+  onGoogleLogout,
+  onOpenImportModal,
 }) => {
   const [resetDone, setResetDone] = useState(false);
+  const [customSheetInput, setCustomSheetInput] = useState(spreadsheetId);
+  const [sheetIdSaved, setSheetIdSaved] = useState(false);
 
   const intervals = [
     { sec: 1, label: '1 ثانية (مباشر فائق السرعة - Real-time)' },
@@ -60,6 +80,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleSaveSheetId = () => {
+    onUpdateSpreadsheetId(customSheetInput);
+    setSheetIdSaved(true);
+    setTimeout(() => setSheetIdSaved(false), 2000);
+    onManualRefresh();
+  };
+
+  const currentSheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       
@@ -71,49 +100,171 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-black text-slate-100">
-              إعدادات تطبيق "تشغيل العز مدينة نصر"
+              إعدادات ومزامنة شيت "تشغيل العز مدينة نصر"
             </h3>
             <p className={`text-xs ${theme.textMuted} mt-0.5`}>
-              التحكم في سرعة المزامنة (1 ثانية) وإدارة الرابط والتنبيهات الصوتية
+              التحكم في المزامنة الحية، ربط حساب Google، وتحديث بيانات الشيتات
             </p>
           </div>
         </div>
       </div>
 
-      {/* 1. Direct Google Sheet Link Card */}
+      {/* 1. Google Account Live Sync Card */}
+      <div className={`p-5 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-4`}>
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+          <div className="flex items-center gap-2">
+            <Key className="w-5 h-5 text-cyan-400" />
+            <h4 className="text-sm font-bold text-slate-100">
+              الربط الرسمي مع Google Sheets API v4
+            </h4>
+          </div>
+          {currentUser ? (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold">
+              متصل بحسابك
+            </span>
+          ) : (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold">
+              غير مسجل
+            </span>
+          )}
+        </div>
+
+        <p className={`text-xs ${theme.textMuted} leading-relaxed`}>
+          عند تعديلك لملف الشيت في Google Drive، يتطلب Google إذناً لقراءة التعديلات الحية. عند تسجيل الدخول، يسحب النظام كافة التعديلات في جميع التبويبات مباشرة وبشكل فوري:
+        </p>
+
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {currentUser ? (
+            <div className="flex items-center gap-3">
+              {currentUser.photoURL ? (
+                <img src={currentUser.photoURL} alt="" className="w-10 h-10 rounded-full border border-emerald-400" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center">
+                  {(currentUser.displayName || currentUser.email || 'G')[0].toUpperCase()}
+                </div>
+              )}
+              <div>
+                <span className="text-xs font-bold text-slate-100 block">
+                  {currentUser.displayName || 'مستخدم Google'}
+                </span>
+                <span className="text-[11px] text-emerald-400 font-mono">
+                  {currentUser.email}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  المزامنة الحية نشطة عبر Google Sheets API
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-amber-300 block">
+                تظهر البيانات القديمة؟
+              </span>
+              <p className="text-[11px] text-slate-300">
+                سجل الدخول بحساب Google المالك للشيت لمنح النظام إذن قراءة التعديلات فور حفظها.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+            {currentUser ? (
+              onGoogleLogout && (
+                <button
+                  type="button"
+                  onClick={onGoogleLogout}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 transition-all cursor-pointer"
+                >
+                  تسجيل الخروج
+                </button>
+              )
+            ) : (
+              onGoogleLogin && (
+                <button
+                  type="button"
+                  onClick={onGoogleLogin}
+                  disabled={isLoggingIn}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-900 flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
+                  <span>{isLoggingIn ? 'جاري الاتصال...' : 'تسجيل الدخول بـ Google'}</span>
+                </button>
+              )
+            )}
+
+            {onOpenImportModal && (
+              <button
+                type="button"
+                onClick={onOpenImportModal}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <ClipboardPaste className="w-4 h-4" />
+                <span>لصق بيانات يدوياً</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Direct Google Sheet Link & ID Configuration */}
       <div className={`p-5 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-4`}>
         <div className="flex items-center gap-2 pb-2 border-b border-slate-800/80">
           <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
           <h4 className="text-sm font-bold text-slate-100">
-            رابط شيت Google الأصلي (بدون أي تعقيدات تسجيل دخول)
+            معرف ورابط ملف Google Sheet
           </h4>
         </div>
 
-        <p className={`text-xs ${theme.textMuted}`}>
-          التطبيق يعمل بشكل مستقل وجاهز للنشر المباشر دون الحاجة لأي إعدادات Google Cloud أو تسجيل دخول معقد:
-        </p>
-
-        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <span className="text-[11px] text-slate-400 block">رابط الشيت المحفوظ:</span>
-            <code className="text-xs text-cyan-400 font-mono break-all font-bold">
-              {SPREADSHEET_URL}
-            </code>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1">
+              رابط الشيت أو معرّف الملف (Spreadsheet ID):
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={customSheetInput}
+                onChange={(e) => setCustomSheetInput(e.target.value)}
+                placeholder="أدخل رابط الشيت أو الـ ID..."
+                className="flex-1 px-3.5 py-2 rounded-xl text-xs font-mono bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              />
+              <button
+                type="button"
+                onClick={handleSaveSheetId}
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{sheetIdSaved ? 'تم الحفظ والمزامنة' : 'حفظ ومزامنة'}</span>
+              </button>
+            </div>
           </div>
 
-          <a
-            href={SPREADSHEET_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all self-start sm:self-center shrink-0"
-          >
-            <span>فتح الشيت في Google Docs</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <span className="text-[11px] text-slate-400 block">الرابط المفتوح حالياً:</span>
+              <code className="text-xs text-cyan-400 font-mono break-all font-bold">
+                {currentSheetUrl}
+              </code>
+            </div>
+
+            <a
+              href={currentSheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all self-start sm:self-center shrink-0"
+            >
+              <span>فتح الشيت في Google Docs</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
         </div>
       </div>
 
-      {/* 2. Frequency Settings */}
+      {/* 3. Frequency Settings */}
       <div className={`p-5 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-4`}>
         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
           <div className="flex items-center gap-2">
@@ -167,7 +318,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Audio Chime Alerts */}
+      {/* 4. Audio Chime Alerts */}
       <div className={`p-5 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-4`}>
         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
           <div className="flex items-center gap-2">
@@ -207,22 +358,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 4. Reset & Backup Actions */}
+      {/* 5. Reset & Wipe Data Actions */}
       <div className={`p-5 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} flex flex-col sm:flex-row items-center justify-between gap-4`}>
         <div>
-          <h4 className="text-sm font-bold text-slate-100">استعادة البيانات الأصلية للشيت</h4>
+          <h4 className="text-sm font-bold text-slate-100">مسح البيانات والبدء بقراءة الشيت</h4>
           <p className={`text-xs ${theme.textMuted} mt-0.5`}>
-            إعادة تحميل كافة السجلات والـ 8 تبويبات من النسخة الأصلية
+            إخلاء كافة السجلات القديمة من النظام والبدء فوراً بقراءة وتحديث بيانات شيت تشغيل العز
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={handleReset}
-            className="px-4 py-2 rounded-xl text-xs font-bold border border-amber-800/50 bg-amber-950/30 text-amber-300 hover:bg-amber-900/50 flex items-center gap-1.5 transition-all cursor-pointer"
+            className="px-4 py-2 rounded-xl text-xs font-bold border border-rose-800/50 bg-rose-950/30 text-rose-300 hover:bg-rose-900/50 flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>{resetDone ? 'تمت الاستعادة بنجاح' : 'استعادة الأصل'}</span>
+            <span>{resetDone ? 'تم المسح وإعادة الفحص' : 'مسح البيانات وإعادة القراءة'}</span>
           </button>
 
           <button

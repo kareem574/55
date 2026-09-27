@@ -5,8 +5,18 @@ import {
   getNasrCityInitialData, 
   extractAllRiderRequests,
   classifyReplyStatus,
-  fetchLiveGoogleSheetTab
+  fetchLiveGoogleSheetTab,
+  fetchSpreadsheetWithOAuth,
+  parseSpreadsheetId,
+  parsePastedSpreadsheetText
 } from '../services/sheets';
+import { 
+  initAuth, 
+  googleSignIn, 
+  getAccessToken, 
+  logout, 
+  User 
+} from '../services/firebase';
 import { 
   playWhatsAppChime, 
   sendWhatsAppSystemNotification, 
@@ -15,35 +25,60 @@ import {
 import { ToastNotificationData } from '../components/WhatsAppNotificationToast';
 
 export function useLiveSheetSync() {
+  const [spreadsheetId, setSpreadsheetIdState] = useState<string>(() => {
+    return localStorage.getItem('nasr_city_spreadsheet_id') || SPREADSHEET_ID;
+  });
+
+  const setSpreadsheetId = (idOrUrl: string) => {
+    const cleanId = parseSpreadsheetId(idOrUrl);
+    setSpreadsheetIdState(cleanId);
+    try {
+      localStorage.setItem('nasr_city_spreadsheet_id', cleanId);
+    } catch {}
+  };
+
   const [sheets, setSheets] = useState<SheetTab[]>(() => {
-    const saved = localStorage.getItem('nasr_city_sheets_exact_v4');
+    // Clear all legacy mock data permanently
+    try {
+      localStorage.removeItem('nasr_city_sheets_exact_v4');
+      localStorage.removeItem('nasr_city_sheets_data');
+    } catch {}
+
+    const saved = localStorage.getItem('nasr_city_sheets_live_v2');
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
     }
-    const initial = getNasrCityInitialData();
-    try {
-      localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(initial));
-    } catch {}
-    return initial;
+    return getNasrCityInitialData();
   });
 
   const [diffs, setDiffs] = useState<SheetDiff[]>([]);
-  const [syncIntervalSec, setSyncIntervalSec] = useState<number>(1);
+  const [syncIntervalSec, setSyncIntervalSec] = useState<number>(2);
   const [isPollingActive, setIsPollingActive] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
   const [hasChangesInLastTick, setHasChangesInLastTick] = useState<boolean>(false);
   const [isSheetRestricted, setIsSheetRestricted] = useState<boolean>(false);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   
   // WhatsApp Notification State
   const [toastNotification, setToastNotification] = useState<ToastNotificationData | null>(null);
   const [hasPushPermission, setHasPushPermission] = useState<boolean>(() => {
     return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
   });
+
+  // Keep ref to sheets to avoid stale closure during sync diff calculation
+  const sheetsRef = useRef<SheetTab[]>(sheets);
+  useEffect(() => {
+    sheetsRef.current = sheets;
+  }, [sheets]);
 
   // Compute live Rider Requests
   const riderRequests = extractAllRiderRequests(sheets);
@@ -54,7 +89,7 @@ export function useLiveSheetSync() {
   const [syncStats, setSyncStats] = useState<SyncStats>({
     syncCount: 1,
     lastSyncTime: new Date(),
-    latencyMs: 82,
+    latencyMs: 75,
     status: 'connected',
     totalAccepted,
     totalRejected,
@@ -70,6 +105,22 @@ export function useLiveSheetSync() {
       totalPending,
     }));
   }, [totalAccepted, totalRejected, totalPending]);
+
+  // Initialize auth listener
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, _token) => {
+        setCurrentUser(user);
+        setIsSheetRestricted(false);
+      },
+      () => {
+        setCurrentUser(null);
+      }
+    );
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   // Request browser notification permission
   const enableNotifications = async () => {
@@ -115,64 +166,141 @@ export function useLiveSheetSync() {
     triggerWhatsAppAlert('3908789', 'تزويد الشيفتات', 'تزويد شيفت طيار', '12:00 AM');
   };
 
-  // Execute 1-second pulse & real Google Sheet online fetch
+  // Execute live sync from Google Sheet
   const executeSync = useCallback(async () => {
     const startTime = performance.now();
     setIsSyncing(true);
+    setLastSyncError(null);
 
     try {
-      // Attempt live fetch from Google Sheet
-      const activeTitle = 'تزويد الشيفتات';
-      const liveRes = await fetchLiveGoogleSheetTab(SPREADSHEET_ID, activeTitle);
+      const token = await getAccessToken();
+      let newSheetsData: SheetTab[] | null = null;
 
-      const endTime = performance.now();
-      const latency = Math.max(25, Math.round(endTime - startTime) || 65);
-      const nowTime = new Date().toLocaleTimeString('ar-EG');
+      // 1. If user is logged in with Google, use official Google Sheets API v4
+      if (token) {
+        const oauthResult = await fetchSpreadsheetWithOAuth(spreadsheetId, token);
+        if (oauthResult.sheets && oauthResult.sheets.length > 0) {
+          newSheetsData = oauthResult.sheets;
+          setIsSheetRestricted(false);
+        } else if (oauthResult.error) {
+          setLastSyncError(oauthResult.error);
+        }
+      }
 
-      if (liveRes.error === 'RESTRICTED_ACCESS') {
-        setIsSheetRestricted(true);
-      } else if (liveRes.rows && liveRes.rows.length > 0) {
-        setIsSheetRestricted(false);
-        // Update sheets with live data from Google Sheets
-        setSheets((currentSheets) => {
-          return currentSheets.map((s) => {
-            if (s.title === activeTitle && liveRes.rows.length > 0) {
+      // 2. Fallback: If not logged in or OAuth failed, try public Google Visualization API
+      if (!newSheetsData) {
+        const currentTitles = sheetsRef.current.map(s => s.title);
+        const fetchResults = await Promise.allSettled(
+          currentTitles.map(title => fetchLiveGoogleSheetTab(spreadsheetId, title))
+        );
+
+        const hasRestricted = fetchResults.some(
+          r => r.status === 'fulfilled' && r.value.error === 'RESTRICTED_ACCESS'
+        );
+
+        if (hasRestricted && !token) {
+          setIsSheetRestricted(true);
+        } else {
+          setIsSheetRestricted(false);
+        }
+
+        const anyRowsFetched = fetchResults.some(
+          r => r.status === 'fulfilled' && r.value.rows && r.value.rows.length > 0
+        );
+
+        if (anyRowsFetched) {
+          const nowTime = new Date().toLocaleTimeString('ar-EG');
+          newSheetsData = sheetsRef.current.map((s, idx) => {
+            const res = fetchResults[idx];
+            if (res.status === 'fulfilled' && res.value.rows && res.value.rows.length > 0) {
               return {
                 ...s,
-                headers: liveRes.headers.length > 0 ? liveRes.headers : s.headers,
-                rows: liveRes.rows,
-                rowCount: liveRes.rows.length,
+                headers: res.value.headers.length > 0 ? res.value.headers : s.headers,
+                rows: res.value.rows,
+                rowCount: res.value.rows.length,
                 updatedAt: nowTime,
               };
             }
-            return {
-              ...s,
-              updatedAt: nowTime,
-            };
+            return s;
           });
-        });
+        }
       }
 
-      setSheets((currentSheets) => {
+      const endTime = performance.now();
+      const latency = Math.max(30, Math.round(endTime - startTime));
+      const nowTime = new Date().toLocaleTimeString('ar-EG');
+
+      if (newSheetsData && newSheetsData.length > 0) {
+        // Compare with old requests to detect changes
+        const oldRequests = extractAllRiderRequests(sheetsRef.current);
+        const newRequests = extractAllRiderRequests(newSheetsData);
+
+        const oldMap = new Map(oldRequests.map(r => [r.id, r]));
+        const detectedDiffs: SheetDiff[] = [];
+
+        newRequests.forEach(newReq => {
+          const oldReq = oldMap.get(newReq.id);
+          if (!oldReq) {
+            detectedDiffs.push({
+              id: `live-${newReq.id}-${Date.now()}`,
+              sheetTitle: newReq.tabTitle,
+              rowIndex: 1,
+              columnIndex: 1,
+              columnName: 'طلب جديد وارد من الشيت',
+              oldValue: '(غير موجود)',
+              newValue: `كابتن ${newReq.riderId} - ${newReq.reply}`,
+              timestamp: nowTime,
+            });
+          } else if (oldReq.statusType !== newReq.statusType || oldReq.reply !== newReq.reply) {
+            detectedDiffs.push({
+              id: `diff-${newReq.id}-${Date.now()}`,
+              sheetTitle: newReq.tabTitle,
+              rowIndex: 1,
+              columnIndex: 5,
+              columnName: 'تحديث الرد',
+              oldValue: oldReq.reply,
+              newValue: newReq.reply,
+              timestamp: nowTime,
+            });
+          }
+        });
+
+        if (detectedDiffs.length > 0) {
+          setDiffs(prev => [...detectedDiffs, ...prev].slice(0, 100));
+          setHasChangesInLastTick(true);
+          setTimeout(() => setHasChangesInLastTick(false), 1500);
+
+          if (isSoundEnabled) {
+            playWhatsAppChime();
+          }
+
+          const firstNew = detectedDiffs[0];
+          triggerWhatsAppAlert('تحديث شيت', firstNew.sheetTitle, firstNew.columnName, firstNew.newValue);
+        }
+
+        setSheets(newSheetsData);
         try {
-          localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(currentSheets));
+          localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(newSheetsData));
         } catch {}
 
-        return currentSheets.map((s) => ({
-          ...s,
-          updatedAt: nowTime,
+        setSyncStats(prev => ({
+          ...prev,
+          syncCount: prev.syncCount + 1,
+          lastSyncTime: new Date(),
+          latencyMs: latency,
+          status: 'connected',
         }));
-      });
-
-      setSyncStats((prev) => ({
-        ...prev,
-        syncCount: prev.syncCount + 1,
-        lastSyncTime: new Date(),
-        latencyMs: latency,
-        status: 'connected',
-      }));
+      } else {
+        setSyncStats(prev => ({
+          ...prev,
+          syncCount: prev.syncCount + 1,
+          lastSyncTime: new Date(),
+          latencyMs: latency,
+          status: isSheetRestricted ? 'error' : 'connected',
+        }));
+      }
     } catch (err: any) {
-      setSyncStats((prev) => ({
+      setSyncStats(prev => ({
         ...prev,
         status: 'error',
         errorMessage: err?.message,
@@ -180,9 +308,9 @@ export function useLiveSheetSync() {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [spreadsheetId, isSoundEnabled, isSheetRestricted]);
 
-  // 1-Second Timer Ticker
+  // Periodic polling ticker
   useEffect(() => {
     if (!isPollingActive) return;
 
@@ -192,6 +320,77 @@ export function useLiveSheetSync() {
 
     return () => clearInterval(intervalId);
   }, [isPollingActive, syncIntervalSec, executeSync]);
+
+  // Google Sign-In handler
+  const handleGoogleLogin = async () => {
+    setIsLoggingIn(true);
+    setAuthError(null);
+    try {
+      const res = await googleSignIn();
+      if (res?.accessToken) {
+        setCurrentUser(res.user);
+        setIsSheetRestricted(false);
+        setTimeout(() => executeSync(), 200);
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || 'تعذر تسجيل الدخول بـ Google');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Google Sign-Out handler
+  const handleGoogleLogout = async () => {
+    await logout();
+    setCurrentUser(null);
+  };
+
+  // Clear all data permanently and re-trigger sync
+  const clearAllSystemData = () => {
+    const clean = getNasrCityInitialData();
+    setSheets(clean);
+    setDiffs([]);
+    try {
+      localStorage.removeItem('nasr_city_sheets_live_v2');
+      localStorage.removeItem('nasr_city_sheets_exact_v4');
+      localStorage.removeItem('nasr_city_sheets_data');
+    } catch {}
+    executeSync();
+  };
+
+  // Import pasted data (Instant TSV/CSV from Google Sheet)
+  const importPastedData = (tabTitle: string, rawText: string) => {
+    const parsed = parsePastedSpreadsheetText(rawText);
+    if (parsed.rows.length === 0) {
+      return { success: false, message: 'لم يتم العثور على أسطر صالحة في النص المنسوخ' };
+    }
+
+    const nowTime = new Date().toLocaleTimeString('ar-EG');
+    setSheets(current => {
+      const updated = current.map(sheet => {
+        if (sheet.title !== tabTitle) return sheet;
+        return {
+          ...sheet,
+          headers: parsed.headers.length > 0 ? parsed.headers : sheet.headers,
+          rows: parsed.rows,
+          rowCount: parsed.rows.length,
+          updatedAt: nowTime,
+        };
+      });
+
+      try {
+        localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+
+    if (isSoundEnabled) {
+      playWhatsAppChime();
+    }
+
+    return { success: true, count: parsed.rows.length };
+  };
 
   // Update single row reply status (e.g. approve or reject request directly)
   const updateRequestReply = (tabTitle: string, riderId: string, newReply: 'مقبول' | 'مرفوض', reason?: string) => {
@@ -220,7 +419,6 @@ export function useLiveSheetSync() {
 
         const oldReply = String(sheet.rows[targetRowIdx][replyColIdx] || '');
         
-        // Log diff
         const newDiff: SheetDiff = {
           id: `${sheet.title}-${riderId}-${Date.now()}`,
           sheetTitle: sheet.title,
@@ -249,7 +447,7 @@ export function useLiveSheetSync() {
       });
 
       try {
-        localStorage.setItem('nasr_city_sheets_data', JSON.stringify(updated));
+        localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(updated));
       } catch {}
 
       return updated;
@@ -258,7 +456,6 @@ export function useLiveSheetSync() {
 
   // Add a new fast rider request & trigger notification
   const addNewRiderRequest = (tabTitle: string, riderId: string, timeOrNote: string) => {
-    // Fire WhatsApp Notification alert
     triggerWhatsAppAlert(riderId, tabTitle, 'طلب جديد', timeOrNote);
 
     setSheets(current => {
@@ -279,7 +476,6 @@ export function useLiveSheetSync() {
 
         const newRows = [newRow, ...sheet.rows];
 
-        // Diff log
         const newDiff: SheetDiff = {
           id: `new-${sheet.title}-${riderId}-${Date.now()}`,
           sheetTitle: sheet.title,
@@ -303,7 +499,7 @@ export function useLiveSheetSync() {
       });
 
       try {
-        localStorage.setItem('nasr_city_sheets_exact_v4', JSON.stringify(updated));
+        localStorage.setItem('nasr_city_sheets_live_v2', JSON.stringify(updated));
       } catch {}
 
       return updated;
@@ -311,10 +507,7 @@ export function useLiveSheetSync() {
   };
 
   const resetToOriginalData = () => {
-    const fresh = getNasrCityInitialData();
-    setSheets(fresh);
-    localStorage.removeItem('nasr_city_sheets_exact_v4');
-    setDiffs([]);
+    clearAllSystemData();
   };
 
   const togglePolling = () => setIsPollingActive(p => !p);
@@ -323,7 +516,8 @@ export function useLiveSheetSync() {
   const dismissToast = () => setToastNotification(null);
 
   return {
-    spreadsheetId: SPREADSHEET_ID,
+    spreadsheetId,
+    setSpreadsheetId,
     sheets,
     riderRequests,
     diffs,
@@ -341,6 +535,7 @@ export function useLiveSheetSync() {
     updateRequestReply,
     addNewRiderRequest,
     resetToOriginalData,
+    clearAllSystemData,
     toastNotification,
     dismissToast,
     triggerWhatsAppAlert,
@@ -348,5 +543,14 @@ export function useLiveSheetSync() {
     hasPushPermission,
     enableNotifications,
     isSheetRestricted,
+    lastSyncError,
+    // Google Auth
+    currentUser,
+    isLoggingIn,
+    authError,
+    handleGoogleLogin,
+    handleGoogleLogout,
+    // Manual Data Import
+    importPastedData,
   };
 }

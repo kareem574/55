@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { RiderRequest, ThemeConfig } from '../types';
 import { formatRiderWhatsAppMessage, formatBulkRidersSummary } from '../services/sheets';
+import { User } from '../services/firebase';
 
 interface RiderRepliesManagerProps {
   theme: ThemeConfig;
@@ -33,6 +34,11 @@ interface RiderRepliesManagerProps {
   onEnableNotifications?: () => void;
   isSheetRestricted?: boolean;
   onManualRefresh?: () => void;
+  currentUser?: User | null;
+  isLoggingIn?: boolean;
+  onGoogleLogin?: () => void;
+  onOpenImportModal?: () => void;
+  lastSyncError?: string | null;
 }
 
 export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
@@ -45,6 +51,11 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
   onEnableNotifications,
   isSheetRestricted,
   onManualRefresh,
+  currentUser,
+  isLoggingIn,
+  onGoogleLogin,
+  onOpenImportModal,
+  lastSyncError,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'accepted' | 'rejected' | 'pending'>('all');
@@ -130,6 +141,18 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {onOpenImportModal && (
+              <button
+                type="button"
+                onClick={onOpenImportModal}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                title="لصق البيانات الحديثة مباشرة من ملف الشيت"
+              >
+                <Plus className="w-4 h-4 text-cyan-400" />
+                <span>لصق بيانات حديثة يدوياً</span>
+              </button>
+            )}
+
             <button
               onClick={handleBulkCopy}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold border ${theme.cardBorder} bg-slate-900/80 hover:bg-slate-800 text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer`}
@@ -141,17 +164,24 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
           </div>
         </div>
 
-        {/* Google Sheet Live Access Notice */}
-        {isSheetRestricted && (
-          <div className="p-3 rounded-xl border border-amber-500/40 bg-amber-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-inner">
-            <div className="flex items-start sm:items-center gap-2.5">
-              <FileSpreadsheet className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
-              <div className="space-y-0.5">
-                <span className="font-bold text-amber-200 block">
-                  ربط جوجل شيت المباشر (Google Sheet Live Sync):
-                </span>
-                <p className="text-[11px] text-amber-300/80">
-                  لتمكين التطبيق من سحب التعديلات من ملف الشيت أونلاين كل ثانية: افتح ملف الشيت واضغط <b>مشاركة (Share)</b> ثم اجعل الوصول العام: <b>أي شخص لديه الرابط (Anyone with the link)</b>.
+        {/* Live Google Sheets Connection State */}
+        {currentUser ? (
+          <div className="p-3.5 rounded-xl border border-emerald-500/40 bg-emerald-950/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-inner">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-emerald-200">
+                    متصل بـ Google Sheets مباشر ({currentUser.email})
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/40">
+                    مزامنة حية
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-300/80 mt-0.5">
+                  يتم قراءة بيانات كافة التبويبات مباشرة من حسابك في Google Sheets فور تحديثها
                 </p>
               </div>
             </div>
@@ -160,11 +190,72 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
               <button
                 type="button"
                 onClick={onManualRefresh}
-                className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 shrink-0 cursor-pointer self-start sm:self-center transition-all"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-700/30 shrink-0 cursor-pointer self-start sm:self-center transition-all flex items-center gap-1.5"
               >
-                إعادة فحص الاتصال بالشيت ↻
+                <span>تحديث البيانات الآن ↻</span>
               </button>
             )}
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl border border-amber-500/50 bg-amber-950/40 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-lg">
+            <div className="flex items-start md:items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-black text-amber-200 text-sm">
+                    لماذا تظهر البيانات القديمة؟
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40">
+                    الشيت محمي بحساب Google
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                  ملف الشيت في Drive خاص ولا يسمح بالقراءة دون إذن. اضغط <b>"تسجيل الدخول بـ Google"</b> لجلب بياناتك الجديدة فوراً، أو اجعل المشاركة في الشيت: <b>"أي شخص لديه الرابط (Anyone with the link)"</b>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-center shrink-0 flex-wrap">
+              {onGoogleLogin && (
+                <button
+                  type="button"
+                  onClick={onGoogleLogin}
+                  disabled={isLoggingIn}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-900 flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
+                  <span>{isLoggingIn ? 'جاري الاتصال...' : 'تسجيل الدخول بـ Google'}</span>
+                </button>
+              )}
+
+              {onOpenImportModal && (
+                <button
+                  type="button"
+                  onClick={onOpenImportModal}
+                  className="px-3 py-2 rounded-xl text-xs font-bold border border-amber-500/40 bg-amber-900/40 hover:bg-amber-900/60 text-amber-200 transition-all cursor-pointer"
+                >
+                  لصق البيانات يدوياً
+                </button>
+              )}
+
+              {onManualRefresh && (
+                <button
+                  type="button"
+                  onClick={onManualRefresh}
+                  className="p-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 cursor-pointer transition-all"
+                  title="إعادة فحص الاتصال بالشيت"
+                >
+                  ↻
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -349,13 +440,64 @@ export const RiderRepliesManager: React.FC<RiderRepliesManagerProps> = ({
       {/* Main Requests Cards & Reply Dispatch Feed */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
         {filteredRequests.length === 0 ? (
-          <div className={`col-span-full p-12 text-center rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-2`}>
-            <p className="text-sm font-bold text-slate-300">
-              لا توجد طلبات مطابقة لمعايير البحث والفلترة المحددة
-            </p>
-            <p className={`text-xs ${theme.textMuted}`}>
-              تأكد من كود الطيار أو قم بتبديل الفلتر لعرض جميع الطلبات
-            </p>
+          <div className={`col-span-full p-10 sm:p-14 text-center rounded-2xl border ${theme.cardBorder} ${theme.cardBg} space-y-4`}>
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
+              <FileSpreadsheet className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h3 className="text-base font-black text-slate-100">
+                {requests.length === 0
+                  ? 'تم مسح البيانات بنجاح، والنظام جاهز لقراءة الشيت'
+                  : 'لا توجد طلبات مطابقة لمعايير البحث الحالية'}
+              </h3>
+              <p className={`text-xs ${theme.textMuted} leading-relaxed`}>
+                {requests.length === 0
+                  ? 'تم إخلاء كافة السجلات القديمة. سيتم عرض الطلبات فور اتصال الشيت أو لصق التعديلات الجديدة مباشرة.'
+                  : 'تأكد من كود الطيار أو قم بتبديل الفلتر لعرض جميع الطلبات.'}
+              </p>
+            </div>
+
+            {requests.length === 0 && (
+              <div className="flex items-center justify-center gap-2.5 flex-wrap pt-2">
+                {!currentUser && onGoogleLogin && (
+                  <button
+                    type="button"
+                    onClick={onGoogleLogin}
+                    disabled={isLoggingIn}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-900 flex items-center gap-2 shadow-lg transition-all cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 48 48">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                    </svg>
+                    <span>{isLoggingIn ? 'جاري الاتصال...' : 'تسجيل الدخول بـ Google للقراءة'}</span>
+                  </button>
+                )}
+
+                {onOpenImportModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenImportModal}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 transition-all cursor-pointer"
+                  >
+                    لصق البيانات من الشيت يدوياً
+                  </button>
+                )}
+
+                {onManualRefresh && (
+                  <button
+                    type="button"
+                    onClick={onManualRefresh}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all cursor-pointer"
+                  >
+                    سحب وتحديث الآن ↻
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           filteredRequests.map((req) => {

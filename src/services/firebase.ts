@@ -2,6 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+export type { User };
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -48,8 +50,22 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
-    console.error('Sign in error:', error);
-    throw error;
+    // Gracefully handle user closing or cancelling the popup
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request'
+    ) {
+      // User closed the popup intentionally - no error should be thrown
+      return null;
+    }
+
+    if (error?.code === 'auth/popup-blocked') {
+      console.warn('يرجى السماح بالنوافذ المنبثقة (Popups) في المتصفح لتسجيل الدخول');
+      return null;
+    }
+
+    console.warn('Google sign-in status:', error?.message || error);
+    return null;
   } finally {
     isSigningIn = false;
   }
