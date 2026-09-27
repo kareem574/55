@@ -1,6 +1,6 @@
 {
-  "name": "تشغيل مدينة نصر",
-  "description": "لوحة تحكم ومتابعة تشغيل مدينة نصر مع مزامنة لحظية لبيانات Google Sheets وتبويبات وثيمات متعددة",
+  "name": "تشغيل العز مدينة نصر",
+  "description": "لوحة عمليات تشغيل العز مدينة نصر - متابعة طلبات الطيارين والردود (مقبول / مرفوض) وتبويبات الشيتات والتحديث كل 1 ثانية",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
